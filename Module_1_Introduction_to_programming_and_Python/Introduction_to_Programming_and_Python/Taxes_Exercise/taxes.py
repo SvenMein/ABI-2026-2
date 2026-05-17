@@ -9,7 +9,7 @@
 
 import pandas as pd
 
-taxes = pd.read_csv("taxpayer.csv", sep=";", header=0)
+taxes = pd.read_csv("taxpayer.csv", sep=";", header=0)                  # check your directory if error message occur
 tax_brackets_income = pd.read_csv("tax_income.csv", sep=",", header=0)
 tax_brackets_assets = pd.read_csv("tax_assets.csv", sep=",", header=0)
 
@@ -34,14 +34,12 @@ for n in taxpayer.keys():
         income = float(income)
         if income <= 10000:
             tax = tax_perc[0]
+        elif income <= 30000:
+            tax = tax_perc[1]
+        elif income <= 70000:
+            tax = tax_perc[2]
         else:
-            if income <= 30000:
-                tax = tax_perc[1]
-            else:
-                if income <= 70000:
-                    tax = tax_perc[2]
-                else:
-                    tax = tax_perc[3]
+            tax = tax_perc[3]
         income_tax = income * tax
         income_tax = round(income_tax,2)
         taxpayer[n]['Outstanding income tax'] = income_tax
@@ -51,14 +49,12 @@ for n in taxpayer.keys():
         assets = float(assets)
         if assets <= 100000:
             tax = tax_perc[0]
+        elif assets <= 500000:
+            tax = tax_perc[1]
+        elif assets <= 1000000:
+            tax = tax_perc[2]
         else:
-            if assets <= 500000:
-                tax = tax_perc[1]
-            else:
-                if assets <= 1000000:
-                    tax = tax_perc[2]
-                else:
-                    tax = tax_perc[3]
+            tax = tax_perc[3]
         assets_tax = assets * tax
         assets_tax = round(assets_tax,2)
         taxpayer[n]['Outstanding assets tax'] = assets_tax
