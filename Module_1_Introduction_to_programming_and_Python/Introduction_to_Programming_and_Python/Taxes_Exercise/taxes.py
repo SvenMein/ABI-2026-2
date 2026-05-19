@@ -9,7 +9,7 @@
 
 import pandas as pd
 
-taxes = pd.read_csv("taxpayer.csv", sep=";", header=0)                  # check your directory if error message occur
+taxes = pd.read_csv("taxpayer.csv", sep=",", header=0)                  # check your directory if error message occur
 tax_brackets_income = pd.read_csv("tax_income.csv", sep=",", header=0)
 tax_brackets_assets = pd.read_csv("tax_assets.csv", sep=",", header=0)
 
@@ -22,12 +22,11 @@ taxpayer = taxes.to_dict(orient="index")
 # Beware the floating point arithmetic.
 
 for n in taxpayer.keys():
-    if taxpayer[n]['First name'] == "El":
-        if taxpayer[n]['Last name'] == "Presidente":
-            income_tax = 0
-            assets_tax = 0
-            taxpayer[n]['Outstanding income tax'] = income_tax
-            taxpayer[n]['Outstanding assets tax'] = assets_tax
+    if taxpayer[n]['First name'] == "El" and taxpayer[n]['Last name'] == "Presidente":
+        income_tax = 0
+        assets_tax = 0
+        taxpayer[n]['Outstanding income tax'] = income_tax
+        taxpayer[n]['Outstanding assets tax'] = assets_tax
     else:
         income = taxpayer[n]['Income']
         tax_perc = tax_brackets_income["Tax"]
