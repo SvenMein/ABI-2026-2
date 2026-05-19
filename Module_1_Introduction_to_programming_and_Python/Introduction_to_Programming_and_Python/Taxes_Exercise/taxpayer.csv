@@ -1,16 +1,16 @@
-First name;Last name;Income;Assets
-El;Presidente;100000;800000
-Manuela;Ortigez;5000;25000
-Fidel;Castro;250000;5000000
-Che;Guevara;2500;1000
-Rául;Castro;750000;2500000
-Camilo;Cienfuegos;50000;350000
-Huber;Matos;35000;100000
-Frank;Pais;25000;250000
-Abel;Santamaria;60000;0
-Roberto;Rodriguez;75000;659400
-René Ramos;Latour;70000;500000
-Humberto;Sori Marin;30000;100000
-Eloy;Gutierrez Menoyo;10000;1000000
-William Alexander;Morgan;35676;356761
-Rolando;Cubela Secades;7613;97613
+First name,Last name,Income,Assets
+El,Presidente,100000,800000
+Manuela,Ortigez,5000,25000
+Fidel,Castro,250000,5000000
+Che,Guevara,2500,1000
+Rául,Castro,750000,2500000
+Camilo,Cienfuegos,50000,350000
+Huber,Matos,35000,100000
+Frank,Pais,25000,250000
+Abel,Santamaria,60000,0
+Roberto,Rodriguez,75000,659400
+René Ramos,Latour,70000,500000
+Humberto,Sori Marin,30000,100000
+Eloy,Gutierrez Menoyo,10000,1000000
+William Alexander,Morgan,35676,356761
+Rolando,Cubela Secades,7613,97613
