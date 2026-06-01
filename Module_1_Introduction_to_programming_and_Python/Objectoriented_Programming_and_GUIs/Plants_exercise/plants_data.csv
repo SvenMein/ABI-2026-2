@@ -1,0 +1,4 @@
+Attribute,Max Value,=0,Over Maximum
+Water reservoir,25,dehydrated,overhydrated
+Sunlight reserve,250,withered,burnt
+Nutrients,1000,malnourished,overfed

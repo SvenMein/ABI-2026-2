@@ -1,6 +1,7 @@
 # 
 
 import matplotlib.pyplot as plt
+from matplotlib.cm import get_cmap
 import numpy as np
 import pandas as pd
 
@@ -36,7 +37,7 @@ sample = ["ctrl", "Wt", "Vehicle", "Drug A", "Drug B", "Drug C", "Drug A + B", "
 y = np.random.randint(10, 20, 15)
 errors = abs(np.random.randn(15))
 plt.figure()
-plt.bar(sample, y, facecolor="grey")
+plt.bar(sample, y, color="grey")
 plt.errorbar(sample, y, errors, fmt="None", ecolor="k", elinewidth=1.5, capsize=5)
 plt.title("Bar Diagram", y=1.02)
 plt.xticks(sample, sample, rotation=45)

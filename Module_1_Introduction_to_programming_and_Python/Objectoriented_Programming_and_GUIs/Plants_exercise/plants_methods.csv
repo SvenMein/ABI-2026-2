@@ -1,0 +1,11 @@
+Method,Task,Increase/Decrease
+shading,lower the sunlight reserve,3.3
+sunbathing,increase the sunlight reserve,4.6
+watering,increase the water reservoir,0.8
+drinking,drecease the water reservoir,1.3
+feeding,increase the Nutrients,12.7
+eating,decrease the Nutrients,14.6
+growing,increase Mass & Height,your choice
+growing,decrease Nutrients & water reservoir & sunlight reserve,17.9 & 1.7 & 5.7
+blossoming,decrease Nutrients & water reservoir & sunlight,22.4 & 2.1 & 10.8
+procreate,decrease Nutrients & water reservoir & sunlight,167.6 & 81.3 & 14.9
