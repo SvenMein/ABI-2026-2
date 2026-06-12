@@ -62,6 +62,10 @@ class Plants:
             raise ValueError("Status must be OK")
         else:
             self.status = status
+
+        if (water_reservoir == 0 and sunlight_reserve == 0 and nutrients == 0) or (water_reservoir > 25 and sunlight_reserve > 250 and nutrients > 1000):
+            status = "dead"
+            print(f"Your plant is {status}")
      
     # Defining getter functions for attributes.
 
@@ -103,7 +107,7 @@ class Plants:
         self.__water_reservoir -= 1.7
         self.__sunlight_reserve -= 5.7
 
-
     # Defining magic methods.
     def __str__(self):
         return f"Plant: {self.name}\nHeight: {self.height}\nMass: {self.mass}\nStatus: {self.status}"
+    
