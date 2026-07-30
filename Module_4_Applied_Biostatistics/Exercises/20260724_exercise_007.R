@@ -134,5 +134,5 @@ my_colors <- c("#fde725", "#7ad151", "#22a884", "#2a788e", "#414487", "#440154")
 
 ggplot(rawdata, aes(x = factor(Strain), y = `norm. HA`, fill = Strain)) +
   geom_bar(stat = "summary", fun = "mean") +
-  geom_beeswarm(cex = 2, size = 3, alpha = 0.5) +
+  geom_beeswarm(cex = 2, size = 3, alpha = 0.75) +
   scale_fill_manual(values = my_colors)
