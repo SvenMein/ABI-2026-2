@@ -1,0 +1,77 @@
+---
+title: "My first document"
+author: "Sven"
+format: 
+  docx:
+    reference-doc:  template_class.docx
+    toc: true
+    toc-depth: 3
+    toc-title: Table of Content
+editor: visual
+execute: 
+  echo: false # We get the source code than the output, must of time disabled is best option
+  warning: false # Common option, hides warnings; errors will still break the code
+  output: asis # as is, rendering will not round numbers etc. Leave the output as it is
+fig-dpi: 300
+fig-width: 6
+fig-height: 8
+---
+
+\newpage
+
+This report was created at `r Sys.time()`. Less accurately, this report was created at `r Sys.Date()`. Even worse, some say it was `r format(Sys.time(), "%Y-%m-%d %H:%M")`.
+
+YAML
+
+# Quarto
+
+***Quarto*** enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+First chunk should contain all the setup, like packages
+
+```{r}
+pacman::p_load(tidyverse, flextable)
+set_flextable_defaults(
+  big.mark = " ",
+  font.size = 7,
+  theme_fun = theme_zebra,
+  padding.bottom = 1,
+  padding.top = 1,
+  padding.left = 3,
+  padding.right = 4
+)
+theme_set(theme_bw())
+```
+
+This is what a table could look like:
+
+```{r}
+penguins |> 
+  flextable() |> 
+  # theme_zebra() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+```
+
+Let's do some fancy table things:
+
+```{r}
+#| echo: true
+penguins |> 
+  flextable() |>
+  separate_header() |>
+  bg(~sex == "female", j = c(1,7), bg = "pink") |>
+  bold(~island == "Torgersen", 2) |>
+  set_table_properties(width = 1,layout = 'autofit')
+```
+
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
