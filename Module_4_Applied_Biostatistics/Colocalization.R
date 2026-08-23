@@ -9,23 +9,89 @@ conflicts_prefer(
 )
 
 # Reading in the data and clean up ####
-# ToDo: Changing cols Strain/Cells to factors
 rawdata <- read_excel(
   path = here("Data/Coloc_Example.xlsx")
   )
 rawdata <- mutate(
   .data = rawdata,
-  Replicate = as.factor(Replicate)
+  Replicate = as.factor(Replicate),
+  Strain = factor(Strain,
+                     levels = c("WT", "Mut", "Mut2"))
 )
-rawdata <- rawdata |> drop_na() |> arrange(rawdata, Strain,
-                                           Replicate, Cell)
-
+rawdata <- rawdata |>
+  drop_na() |>
+  arrange(rawdata, Strain, Replicate, Cell)
 
 # Data Exploration & Distribution check ####
 ## General data exploration ####
 ggplot(rawdata, aes(Replicate, PCC)) +
-  geom_beeswarm(cex = 3, size = 2) +
+  geom_beeswarm(cex = 1, size = 2) +
   facet_wrap(facets = vars(Strain), scale ="free_x")
+
+ggplot(rawdata, aes(Replicate, PCC)) +
+  geom_boxplot(
+    outlier.alpha = 1,
+    outlier.color = "red",
+    alpha = 0.25) +
+  geom_beeswarm(cex = 1, size = 2, alpha = 0.25) +
+  facet_wrap(facets = vars(Strain), scale ="free_x")
+
+quick_sum <- rawdata |>
+  group_by(Strain, Replicate) |>
+  summarise(across(
+    .cols = PCC,
+    .fns = list(
+      Mean = \(x) mean(x),
+      SD = \(x) sd(x)
+    )
+  ),
+  .groups = "drop") |>
+  rename(Mean = PCC_Mean, SD = PCC_SD)
+
+ggplot(quick_sum, aes(Replicate, Mean)) +
+  geom_errorbar(aes(ymin = Mean - 2 * SD,
+                    ymax = Mean + 2 * SD,
+                ),
+                colour = "red", linewidth = 1, width = 0.5
+  ) +
+  stat_summary(geom = "point", shape = "-",
+               size = 15, colour = "red") +
+  geom_beeswarm(data = rawdata, aes(Replicate, PCC),
+                cex = 1, size = 2) +
+  ylab("PCC") +
+  facet_wrap(facets = vars(Strain), scale ="free_x")
+
+ggplot(quick_sum, aes(Strain, Mean)) +
+  geom_beeswarm(cex = 1, size = 2) + ylab("PCC")
+
+ggplot(quick_sum, aes(Strain, Mean)) +
+  geom_boxplot(
+    outlier.alpha = 1,
+    outlier.color = "red",
+    alpha = 0.25) +
+  geom_beeswarm(cex = 1, size = 2, alpha = 0.25) + ylab("PCC")
+
+quick_sum2 <- quick_sum |>
+  group_by(Strain) |>
+  summarise(across(.cols = Mean,
+                   .fns = list(
+                     Mean = \(x) mean(x),
+                     SD = \(x) sd(x)
+                   )),
+            .groups = "drop") |>
+  rename(Mean = Mean_Mean, SD = Mean_SD)
+
+ggplot(quick_sum2, aes(Strain, Mean)) +
+  geom_errorbar(aes(ymin = Mean - 2 * SD,
+                    ymax = Mean + 2 * SD,
+  ),
+  colour = "red", linewidth = 1, width = 0.1
+  ) +
+  stat_summary(geom = "point", shape = "-",
+               size = 15, colour = "red") +
+  geom_beeswarm(data = quick_sum, aes(Strain, Mean),
+                cex = 1, size = 2) +
+  ylab("PCC")
 
 ## Test for normality ####
 # Saving all measurements, which will be tested for
@@ -150,6 +216,12 @@ for (strain_i in 1:nrow(distinct(result, Strain))) {
 
 
 # Statistical Analysis ####
+## t-Test for two groups ####
+vartest_out <- var.test(rawdata$PCC ~ rawdata$Strain)
+t_out <- t.test(
+  rawdata$PCC ~ rawdata$Strain,
+  var.equal = vartest_out$p.value > 0.05
+)
 
 # Data Visualization ####
 barplot <- ggplot(data = result_summary, aes(x = factor(Strain,
@@ -176,8 +248,7 @@ basic_plot <- ggplot(data = result, aes(x = factor(Strain,
   xlab("") + ylab("PCC")
 
 superplot <- basic_plot + geom_beeswarm(data = rawdata,
-                            aes(x = factor(Strain,
-                            levels = c("WT", "Mut", "Mut2")), y = PCC,
+                            aes(x = Strain, y = PCC,
                             color = Replicate, shape = Replicate),
                             cex = 3, alpha = 0.4, size = 2) +
   geom_beeswarm(aes(color = Replicate, shape = Replicate),
@@ -192,4 +263,23 @@ superplot <- basic_plot + geom_beeswarm(data = rawdata,
 (barplot | superplot) + plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(size = 20, face = "bold"))
 
+# Power Analysis ####
+## How big should the sample size n be?
+power_tibble <- tibble(
+  delta = NA_real_,
+  n = NA_real_,
+  power = NA_real_,
+  .rows = 0
+)
 
+for (delta_i in seq(0.5, 10, 0.1)) {
+  power_tibble <- add_row(
+    .data = power_tibble,
+    delta = delta_i,
+    n = power.t.test(
+      delta = delta_i, sd = 0.5, sig.level = 0.05, power = .8
+    )$n,
+    power = 0.80
+  )
+}
+ggplot(power_tibble, aes(x = delta, y = n)) + geom_line()

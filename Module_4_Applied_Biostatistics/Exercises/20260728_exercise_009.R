@@ -25,7 +25,7 @@ ggplot(penguins, aes(x = species, fill = sex)) + geom_bar()
 # boxplot + beeswarm for weight and species
 #
 ggplot(penguins, aes(species, body_mass_g, fill = sex)) +
-  geom_boxplot(outlier.alpha = 0, alpha = 0.5) +
+  geom_boxplot(outlier.alpha = 1, alpha = 0.5) +
   geom_beeswarm(cex = 0.9, alpha = 0.5, dodge.width = 0.75, aes(color = sex), shape = 21, size = 2, col = "black")
 
 ggplot(penguins, aes(species, body_mass_g, fill = sex)) +
@@ -51,3 +51,4 @@ ggplot(penguins, aes(y = flipper_length_mm, x = body_mass_g, color = sex, shape 
 # optionally, define your own colors for species (scale or name or rgb)
 ggplot(penguins, aes(y = flipper_length_mm, x = body_mass_g, color = sex, shape = species)) +
   geom_point(size = 2) + scale_color_manual( values = c("#fde725", "#440154"))
+
