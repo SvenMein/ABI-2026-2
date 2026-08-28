@@ -1,6 +1,6 @@
 ---
 title: "My first document"
-author: "Sven"
+author: "Sven Meinerz"
 format: 
   docx:
     reference-doc:  template_class.docx
@@ -67,7 +67,6 @@ penguins |>
   bold(~island == "Torgersen", 2) |>
   set_table_properties(width = 1,layout = 'autofit')
 ```
-
 
 ```{r}
 #| echo: false

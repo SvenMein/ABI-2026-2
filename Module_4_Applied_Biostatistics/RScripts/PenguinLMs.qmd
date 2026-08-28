@@ -1,0 +1,602 @@
+---
+title: "Cute penguin models"
+format: 
+  docx:
+    reference-doc:  template_class.docx
+    toc: true
+  # pdf:
+    # toc: true
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  output: asis
+fig-dpi: 300
+fig-width: 6
+fig-height: 8
+tbl-cap-location: top
+---
+
+```{r setupstuff}
+pacman::p_load(conflicted,tidyverse,wrappedtools,
+               rlist, flextable, ggsignif,
+               patchwork, ggbeeswarm, broom, car,
+               easystats, multcomp, emmeans,
+               palmerpenguins
+               )
+conflicts_prefer(dplyr::filter, 
+                 dplyr::select,
+                 palmerpenguins::penguins)
+set_flextable_defaults(big.mark = " ", 
+                       font.size = 9, 
+                       theme_fun = theme_vanilla,
+                       padding.bottom = 1, 
+                       padding.top = 3,
+                       padding.left = 3,
+                       padding.right = 4#,
+                       # font.family = "Roboto Condensed"
+)
+theme_set(theme_bw())
+# theme_update(
+#   plot.title = element_text(family = "Roboto Condensed"),
+#   plot.caption = element_text(family = "Roboto Condensed"),
+#   axis.title = element_text(family = "Roboto Condensed"),
+#   axis.text = element_text(family = "Roboto Condensed"),
+#   strip.text = element_text(family = "Roboto Condensed"))
+gmx_colors <- c("#AE177C", "#20346E", "#784CD8",
+                "#E70B76", "#FDCCF8") 
+```
+
+```{r dataprep}
+rawdata <- penguins |>
+  drop_na() |> 
+  mutate(year = factor(year))
+Adelies <- rawdata |> 
+  filter(species == "Adelie") |> 
+  mutate(`body weight [kg]` = body_mass_g/1000)
+```
+
+# Regression-like:
+
+## Model flipper length depending on weight
+
+to dos:
+
+- vizualize the data for the task (points, smoothies)
+
+- build a model and put into variable
+
+- print model output (tidy/ flextable?)
+
+- test significance of model terms
+
+- print significance
+
+- check model??
+
+- if suitable, visualize results
+
+```{r}
+rawdata |> 
+  ggplot(aes(body_mass_g)) +
+  geom_density()
+cat("<br>\n\n")
+Adelies |> 
+  ggplot(aes(body_mass_g)) +
+  geom_density()
+cat("<br>\n\n")
+rawdata |> 
+  ggplot(aes(body_mass_g,flipper_length_mm)) +
+  geom_point() +
+  geom_smooth(color = "darkgreen") +
+  geom_smooth(method = "lm")
+cat("<br>\n\n")
+Adelies |> 
+  ggplot(aes(body_mass_g,flipper_length_mm)) +
+  geom_point() +
+  geom_smooth(color = "darkgreen") +
+  geom_smooth(method = "lm")
+cat("<br>\n\n")
+flipper_by_weight <- 
+  lm(flipper_length_mm~body_mass_g,
+     data = rawdata)
+tidy(flipper_by_weight) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+anova(flipper_by_weight) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |> 
+  flextable() |> 
+  set_table_properties(width = .8,layout = 'autofit')
+cat("<br>\n\n")
+
+
+```
+
+## prediction
+
+```{r}
+#create NAs
+set.seed(2026)
+NA_positions <- 
+  sample(1:nrow(rawdata), 20,replace = FALSE) |> 
+  sort()
+penguins_with_NAs <- rawdata
+penguins_with_NAs[NA_positions, "flipper_length_mm"] <- NA
+# penguins_with_NAs[NA_positions, "flipper_length_mm"] |> 
+#   flextable()
+# cat("<break>\n\n")
+
+# model
+flipper_model <- 
+  lm(flipper_length_mm~body_mass_g,
+     data = penguins_with_NAs)
+ penguins_with_NAs <- 
+   mutate(penguins_with_NAs,
+          flipper_length_mm = 
+            case_when(is.na(flipper_length_mm) ~
+                        flipper_model$coefficients[1] +
+                        flipper_model$coefficients[2] * 
+                          body_mass_g,
+                      .default = flipper_length_mm 
+                      )
+          )
+penguins_with_NAs[NA_positions, "flipper_length_mm"]
+real_vs_predicted <- 
+  tibble(real = rawdata$flipper_length_mm[NA_positions],
+         predicted = penguins_with_NAs$flipper_length_mm[NA_positions]
+  )
+ggplot(real_vs_predicted, 
+       aes(x = real, y = predicted)) +
+  geom_point()
+```
+
+## Change in units -\> change in slope
+
+```{r}
+rawdata <-    
+   mutate(rawdata,
+          `body weight [kg]` = body_mass_g/1000)
+ 
+
+lm_kg <- 
+  lm(flipper_length_mm ~ `body weight [kg]`,
+     data = rawdata)
+lm_kg_a <- 
+  lm(flipper_length_mm ~ `body weight [kg]`,
+     data = Adelies)
+anova_kg <- anova(lm_kg) |> 
+  tidy()
+lm_kg  |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat('<br>\n\n')
+if (interactive()) {
+  x11()
+}
+check_model(lm_kg)
+cat("<br>\n\n")
+check_model(lm_kg_a)
+if (interactive()) {
+  dev.off()
+}
+
+rawdata |> 
+  ggplot(aes(`body weight [kg]`,flipper_length_mm)) +
+  geom_point() +
+  geom_smooth(method = "lm",
+              color = gmx_colors[1], fill = gmx_colors[2]) +
+  annotate(geom = "label",
+           x = 5.75, y = 180,
+           size = 3,
+           label = paste('Increase flipper length\nper kg body weight (Slope):\n', 
+                          roundR(lm_kg$coefficients[2],3),
+                          " p",formatP(anova_kg$p.value[1],
+                                      pretext = T,mark = T)))
+cat("<br>\n\n")
+
+```
+
+## Model bill depth depending on weight
+
+```{r}
+rawdata |> 
+  ggplot(aes(body_mass_g, bill_depth_mm)) +
+  geom_point() +
+  geom_smooth(color = "darkgreen") +
+  geom_smooth(method = "lm")
+cat("<br>\n\n")
+bill_by_weight <- 
+  lm(bill_depth_mm ~ body_mass_g,
+     data = rawdata)
+tidy(bill_by_weight) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+anova(bill_by_weight) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+if (interactive()) {
+  x11()
+}
+check_model(bill_by_weight)
+if (interactive()) {
+  dev.off()
+}
+```
+
+Adjust for species and sex first?
+
+```{r}
+rawdata |> 
+  ggplot(aes(body_mass_g,bill_depth_mm)) +
+  geom_point(aes(color = species, shape = sex)) +
+  geom_smooth(color = "darkgreen") +
+  geom_smooth(method = "lm")
+cat("<br>\n\n")
+bill_by_sp_sex_weight <- 
+  lm(bill_depth_mm~species +sex +body_mass_g,
+     data = rawdata)
+tidy(bill_by_sp_sex_weight) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+anova(bill_by_sp_sex_weight) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+
+Anova(bill_by_sp_sex_weight) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |> 
+  flextable() |> 
+  set_table_properties(width = .6,layout = 'autofit')
+cat("<br>\n\n")
+
+check_model(bill_by_sp_sex_weight)
+
+rawdata |> 
+  ggplot(aes(body_mass_g,bill_depth_mm)) +
+  geom_point(aes(color = species, shape = sex)) +
+  geom_abline(
+    intercept = bill_by_sp_sex_weight$coefficients[1],
+    slope = bill_by_sp_sex_weight$coefficients["body_mass"],
+    color = "darkorange3",
+    linewidth = 2) +
+  geom_smooth(method = "lm")
+cat("<br>\n\n")
+
+
+```
+
+# Anova-like:
+
+## flipper length by species
+
+```{r}
+rawdata |> 
+  ggplot(aes(species,flipper_length_mm)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_beeswarm(alpha = .2)
+flipper_by_species <- 
+  lm(flipper_length_mm ~ species,
+     data = rawdata)
+tidy(flipper_by_species) |> 
+  select(1:2, p.value)|> 
+  mutate(p.value = formatP(p.value,ndigits = 3, mark = T)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+anova(flipper_by_species) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+if (interactive()) {
+  x11()
+}
+check_model(flipper_by_species)
+if (interactive()) {
+  dev.off()
+}
+posthoc <- 
+  pairwise.t.test(rawdata$flipper_length_mm,rawdata$species,
+                p.adjust.method = "fdr") |> 
+  tidy()
+
+posthoc |> 
+  # as_tibble(rownames = "Reference")|> 
+  mutate(p.value = formatP(p.value,ndigits = 5,
+                           mark = TRUE)) |>
+  flextable() |>
+  set_table_properties(width = 1,layout = 'autofit')
+
+posthoc2 <- 
+  summary(glht(model = flipper_by_species,
+             linfct = mcp(species = 'Tukey')))
+
+posthoc2$test$pvalues
+
+rawdata |> 
+  ggplot(aes(species,flipper_length_mm)) +
+#  geom_boxplot(outlier.alpha = 0) +
+  geom_beeswarm(alpha = .2) +
+  stat_summary(color = "darkblue",
+               fun.data = mean_cl_normal) +
+  geom_signif(comparisons = list(c(1,2),c(1,3), c(2,3)),
+              annotations = #markSign(posthoc2$test$pvalues),
+              paste("p",posthoc2$test$pvalues |>
+              formatP(3,pretext = T, mark= T)),
+              y_position = c(240,250,240),
+              extend_line = -.005) +
+  scale_y_continuous(
+    name = "flipper length\nmean \u00b1 95% CI",
+    expand = expansion(mult = .1)) 
+```
+
+## flipper by species and sex (and interaction?)
+
+```{r}
+rawdata |> 
+  ggplot(aes(species,flipper_length_mm, color = sex)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_beeswarm(alpha = .25,
+                dodge.width = .75) +
+  scale_color_manual(values = gmx_colors)
+
+rawdata |> 
+  ggplot(aes(species,flipper_length_mm, color = sex)) +
+  geom_beeswarm(alpha = .25,
+                dodge.width = .25) +
+  stat_summary(position = position_dodge(width = .25),
+               fun.data = mean_cl_normal) +
+  stat_summary(fun = mean,geom = "line", 
+               aes(group = sex),
+               position = position_dodge(width = .25)) +
+  ylab("Flipper length (mm) \u00b1 95% CI") +
+  scale_color_manual(values = gmx_colors)
+
+
+flipper_by_species_star_sex <- 
+  lm(flipper_length_mm ~ species*sex,
+     data = rawdata)
+if (interactive()) {
+  x11()
+}
+check_model(flipper_by_species_star_sex)
+rawdata |> 
+  slice(c(124,272,313)) |> 
+  select(species, sex, flipper_length_mm,body_mass_g)
+tidy(flipper_by_species_star_sex) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = .7,layout = 'autofit')
+cat("<br>\n\n")
+Anova_out <- 
+  Anova(flipper_by_species_star_sex,type = 3) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4))  
+Anova_out |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+posthoc <- summary(glht(model = flipper_by_species_star_sex,
+             linfct = mcp(species = 'Tukey',
+                        sex = "Tukey"))) |> 
+  tidy()
+posthoc |> 
+  mutate(adj.p.value = formatP(adj.p.value, 5, mark = T)) |> 
+  flextable()
+tempdata <- mutate(
+  rawdata,
+  species_sex = interaction(species, sex)
+)
+flipper_by_species_star_sex2 <- 
+  lm(flipper_length_mm ~ species_sex,
+     data = tempdata)
+tidy(flipper_by_species_star_sex2) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = .7,layout = 'autofit')
+cat("<br>\n\n")
+Anova_out2 <- 
+  Anova(flipper_by_species_star_sex2,type = 3) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4))  
+Anova_out2 |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+
+posthoc_star2 <- summary(glht(model = flipper_by_species_star_sex2,
+             linfct = mcp(species_sex = 'Tukey'))) |> 
+  tidy()
+
+posthoc_star2 |> 
+  mutate(p.value = formatP(adj.p.value),
+         estimate = roundR(estimate,3)) |> 
+  select(contrast,estimate,p.value) |> 
+  flextable()
+
+pairwise.t.test(tempdata$flipper_length_mm,
+                tempdata$species_sex,
+                p.adjust.method = "n")
+
+nested_p <- emmeans(flipper_by_species_star_sex,
+                    ~ sex | species) |> 
+  pairs() |> tidy()
+nested_p2 <- emmeans(flipper_by_species_star_sex,
+                    ~ species | sex) |> 
+  pairs() |> tidy()
+rawdata |> 
+  ggplot(aes(species,flipper_length_mm, color = sex)) +
+  geom_beeswarm(alpha = .25,
+                dodge.width = .25) +
+  stat_summary(position = position_dodge(width = .25),
+               fun.data = mean_cl_normal) +
+  stat_summary(fun = mean,geom = "line", 
+               aes(group = sex),
+               position = position_dodge(width = .25)) +
+  ylab("Flipper length (mm)\nmean\u00b1 95% CI") +
+  geom_signif(comparisons = list(c(1,2),c(1,3), c(2,3)),
+              annotations = posthoc$adj.p.value[-4] |> 
+                formatP(),#markSign(),
+              y_position = c(240,250,240),
+              extend_line = -.005,
+              color = "black") +
+  scale_y_continuous(expand = expansion(mult = .1)) +
+  scale_color_manual(
+    name = paste('sex\n p ', 
+                 Anova_out |> 
+                   filter(term == "sex") |> 
+                   pull(p.value) |> 
+                   formatP(pretext = TRUE)),
+    values = gmx_colors) +
+  annotate(geom = "label", x = 3.75, y = 215,
+           label = paste("interaction\nsex*species\np",
+                         Anova_out |> 
+                           filter(term == "species:sex") |> 
+                           pull(p.value) |> 
+                           formatP(pretext = TRUE))) +
+  scale_x_discrete(expand = expansion(add = c(.5,1.25))) +
+  geom_signif(xmin = c(.9,1.9, 2.9), 
+              xmax = c(1.1, 2.1,3.1), 
+              y_position = c(220,225, 235), 
+              annotations = paste("p",
+                                  nested_p$p.value |> 
+                                    formatP(pretext = T, 
+                                            mark = T)),
+              color = "black", textsize = 2.5)
+
+flipper_by_species_plus_sex <- 
+  lm(flipper_length_mm ~ species +sex,
+     data = rawdata)
+tidy(flipper_by_species_plus_sex) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+
+anova(flipper_by_species_plus_sex, 
+      flipper_by_species_star_sex) |> 
+  tidy() |> 
+  flextable()
+
+
+Anova(flipper_by_species_plus_sex,type = 2) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+
+```
+
+# combined:
+
+## flipper len by species/sex/weight
+
+```{r}
+rawdata |>   
+  ggplot(aes(body_mass_g,flipper_length_mm)) +
+  geom_point(alpha = .2) +
+  # geom_smooth(color = "darkgreen") +
+  geom_smooth(method = "lm") +
+  facet_grid(cols = vars(sex),
+             rows = vars(species),
+             margins = TRUE)
+cat("<br>\n\n")
+flipper_with_stars <- 
+  lm(flipper_length_mm~(body_mass_g +species +sex)^2,  # this calls for all  2-way interactions
+     data = rawdata)
+tidy(flipper_with_stars) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+Anova(flipper_with_stars,type = 3) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4,mark = T)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+
+flipper_with_plus <- 
+  lm(flipper_length_mm~body_mass_g +species +sex,
+     data = rawdata)
+tidy(flipper_with_plus) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+Anova(flipper_with_plus,type = 2) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+anova(flipper_with_stars, flipper_with_plus) |> 
+  tidy() |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat('<br>\n\n')
+
+
+flipper_with_sex_star_species <- 
+  lm(flipper_length_mm~body_mass_g + species * sex,
+     data = rawdata)
+tidy(flipper_with_sex_star_species) |> 
+  select(1:2) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+Anova(flipper_with_sex_star_species,type = 3) |> 
+  tidy() |> 
+  mutate(p.value = formatP(p.value,4)) |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat("<br>\n\n")
+anova(flipper_with_stars, flipper_with_sex_star_species) |> 
+  tidy() |> 
+  flextable() |> 
+  set_table_properties(width = 1,layout = 'autofit')
+cat('<br>\n\n')
+if (interactive()) {
+  x11()
+}
+check_model(flipper_by_species_star_sex)
+if (interactive()) {
+  dev.off()
+}
+```
+
+create formulas programmatically
+
+```{r}
+pred_vars <- ColSeeker(namepattern = c("^s[ep]","mass"))
+star_formula <- paste("flipper_len",
+                      paste(pred_vars$names, collapse = "*"),
+                      sep = "~")
+star_formula
+plus_formula <- paste("flipper_len",
+                      paste(pred_vars$names, collapse = "+"),
+                      sep = "~")
+plus_formula
+```

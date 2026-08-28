@@ -1,0 +1,128 @@
+---
+title: "Colocalization Timeseries"
+author: "Sven Meinerz"
+format: 
+  docx:
+    reference-doc:  template_class.docx
+    toc: true
+    toc-depth: 3
+    toc-title: Table of Content
+editor: visual
+execute: 
+  echo: false # We get the source code than the output, must of time disabled is best option
+  warning: false # Common option, hides warnings; errors will still break the code
+  output: asis # as is, rendering will not round numbers etc. Leave the output as it is
+fig-dpi: 300
+fig-width: 6
+fig-height: 8
+---
+
+# Setup
+
+```{r}
+#| echo: true
+pacman::p_load(
+ conflicted, tidyverse, here, ggplot2, wrappedtools,
+ ggbeeswarm, readxl, ggsignif, patchwork, ggh4x, flextable, TOSTER,
+ nlme, broom, DescTools, lme4, merTools, gg4x, lme4
+)
+conflicts_prefer(
+  dplyr::select,
+  dplyr::filter,
+  ggplot2::mean_cl_boot,
+  modelbased::standardize
+)
+```
+
+# Data Import
+
+Importing data from an excel file. Data is inside the sheet called "rawdata".
+
+```{r}
+#| echo: true
+rawdata <- read_excel(
+  path = here("Data/Coloc_Timeseries.xlsx"),
+  sheet = "rawdata"
+  )
+rawdata <- mutate(
+  .data = rawdata,
+  Strain = factor(Strain,
+                     levels = c("WT", "Mut1", "Mut2"))
+)
+```
+
+# Graphical Data exploration
+
+## Quick check of data distribution
+
+Here we check distribution of the PCC values and overlay a theoretical, normal distributed curve based on the measured values.
+
+```{r}
+#| echo: true
+
+ggplot(rawdata, aes(PCC)) + 
+  geom_density(fill = "lightblue", alpha = 0.5) +
+  stat_theodensity(distri = "norm", linewidth = 0.5, color = "red") +
+  facet_wrap(facets = vars(Strain))
+
+```
+
+Based on these plots we can assume, that the PCC values are not normal distributed, as they deviated from theoretical distribution.
+
+## Exploration for data modelling
+
+Next we look into our data and try to eyeball what an appropriate model for the data might be. First we check for a general linear model.
+
+```{r}
+#| echo: true
+
+ggplot(rawdata, aes(Timepoint, PCC, color = Strain)) +
+  stat_summary(fun.data = mean_se, position = position_dodge(width = 1)) +
+  ylab("PCC\nmean \u00b1 SEM")
+
+ggplot(rawdata, aes(x = Timepoint, y = PCC)) +
+  geom_point() + 
+  geom_smooth() +
+  geom_smooth(method = "lm", color = "red") +
+  facet_wrap(facets = vars(Strain))
+
+ggplot(rawdata, aes(Timepoint, PCC)) +
+  geom_point() +
+  geom_smooth() +
+  geom_smooth(method = "lm", color = "red")
+
+ggplot(rawdata, aes(Timepoint, PCC, color = Strain)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth() +
+  scale_y_continuous(name = "PCC\nmean \u00b1 95% CI", limits = c(0, 0.75)) +
+  xlab("elapsed time [min]")
+```
+
+As we see in the two generated plots, the red line from the linear regression is quiet different from the result from the loess method. This was expected for a number of reasons:\
+1. From the experiment performed, we expected at first a rise of the PCC values, than the longer the time goes on that will fall again.\
+2. PCC values are hard limited, meaning they always have a value between -1 and 1. It would not be appropriate to use a linear regression to predict values outside of this range.
+
+Let's take a moment and think about our data: We have one measured, dependent variable (PCC) and two independent variables (Strain and Timepoint). Based on this a linear mixed model (LMM) seems to be more appropriate.
+
+# Building the Linear Mixed Model
+## Random Intercept Model
+```{r}
+lmer_out <- lmer(PCC ~ Strain + (1 | Timepoint), data = rawdata)
+lmer_out
+(Anova(lmer_out))
+```
+
+```{r}
+(lmer_out_param <- model_parameters(lmer_out, group_level = TRUE))
+intercept_all <- lmer_out_param$Coefficient[1]
+slope_Ang <- lmer_out_param$Coefficient[2]
+slope_What <- lmer_out_param$Coefficient[3]
+plotdata <- tibble(
+  Timepoint = lmer_out_param$Level[-(1:3)],
+  intercept = lmer_out_param$Coefficient[-(1:3)] +
+    intercept_all
+)
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
