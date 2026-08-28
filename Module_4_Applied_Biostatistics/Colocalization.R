@@ -1,11 +1,14 @@
 pacman::p_load(
  conflicted, tidyverse, here, ggplot2, wrappedtools,
- ggbeeswarm, readxl, ggsignif, patchwork, ggh4x, flextable
+ ggbeeswarm, readxl, ggsignif, patchwork, ggh4x, flextable, TOSTER,
+ nlme, broom, DescTools, lme4, merTools
 )
 
 conflicts_prefer(
+  dplyr::select,
   dplyr::filter,
-  ggplot2::mean_cl_boot
+  ggplot2::mean_cl_boot,
+  modelbased::standardize
 )
 
 # Reading in the data and clean up ####
@@ -93,6 +96,8 @@ ggplot(quick_sum2, aes(Strain, Mean)) +
                 cex = 1, size = 2) +
   ylab("PCC")
 
+rm(quick_sum, quick_sum2)
+
 ## Test for normality ####
 # Saving all measurements, which will be tested for
 # normality in numvars
@@ -123,7 +128,7 @@ for (measurement_i in numvars$names) {
   print(flextable(output) |> set_caption(
     "Test for normality of colocalization data") |>
           set_table_properties(layout = "autofit", width = 1) |>
-          hline(c(3,7)) |> merge_v(j = 1) |>
+          hline(c(3,6)) |> merge_v(j = 1) |>
           bold(part = "header"))
 }
 rm(output)
@@ -188,6 +193,10 @@ for (strain_i in 1:nrow(distinct(rawdata, Strain))) {
   }
 }
 result <- result |> drop_na()
+equi <- t_TOST(x = result$`Mean PCC`[which(result$Strain == "WT")],
+       y = result$`Mean PCC`[which(result$Strain == "Mut")],
+       low_eqbound = -0.05, high_eqbound = 0.05)
+plot(equi)
 
 result_summary <- strain_tibble |> mutate(
   `Mean PCC` = rep(NA, nrow(strain_tibble)),
@@ -217,11 +226,45 @@ for (strain_i in 1:nrow(distinct(result, Strain))) {
 
 # Statistical Analysis ####
 ## t-Test for two groups ####
-vartest_out <- var.test(rawdata$PCC ~ rawdata$Strain)
-t_out <- t.test(
-  rawdata$PCC ~ rawdata$Strain,
-  var.equal = vartest_out$p.value > 0.05
+# vartest_out <- var.test(rawdata$PCC ~ rawdata$Strain)
+# t_out <- t.test(
+#   rawdata$PCC ~ rawdata$Strain,
+#   var.equal = vartest_out$p.value > 0.05
+# )
+## ANOVA for more than two groups
+### Graphical exploration
+ggplot(data = result, aes(
+  x = factor(Strain,
+  levels = c("WT", "Mut", "Mut2")),
+  y = `Mean PCC`)) +
+  theme(axis.title.x = element_text(size = 20, family = "arial"),
+        axis.title.y = element_text(size = 20, family = "arial"),
+        axis.text = element_text(size =15,
+         family = "arial", color = "black")) +
+  xlab("Strain") + ylab("PCC") +
+  geom_violin(data = rawdata, draw_quantiles = c(0.25, 0.5, 0.75),
+              aes(x = Strain, y = PCC)) +
+  geom_beeswarm(data = rawdata,
+                aes(x = Strain, y = PCC,
+                    color = Replicate, shape = Replicate),
+                cex = 2, alpha = 0.4, size = 2) +
+  geom_beeswarm(aes(color = Replicate, shape = Replicate),
+                size = 5, cex = 3)
+
+### Modelling
+(anova_out <- lm(`Mean PCC` ~ Strain, data = result))
+(t <- anova(anova_out))
+
+### Post-hoc analysis
+pt_out <- pairwise.t.test(
+  x = result$`Mean PCC`, g = result$Strain,
+  p.adjust.method = "none"
 )
+
+# comparison against the control/wild type strain WT
+pt_out_adj <- p.adjust(pt_out$p.value[, 1], method = "fdr")
+formatP(p.adjust(pt_out$p.value[, 1], method = "fdr"))
+
 
 # Data Visualization ####
 barplot <- ggplot(data = result_summary, aes(x = factor(Strain,
@@ -247,6 +290,7 @@ basic_plot <- ggplot(data = result, aes(x = factor(Strain,
                               family = "arial", color = "black")) +
   xlab("") + ylab("PCC")
 
+
 superplot <- basic_plot + geom_beeswarm(data = rawdata,
                             aes(x = Strain, y = PCC,
                             color = Replicate, shape = Replicate),
@@ -258,7 +302,14 @@ superplot <- basic_plot + geom_beeswarm(data = rawdata,
                 width = 0.1, colour = "black", linewidth = 1) +
   stat_summary(geom = "point", shape = "-", size = 15) +
   scale_y_continuous(limits = c(-0.4, 1), n.breaks = 8) +
-  scale_shape_manual(values = c(15, 16, 17, 18))
+  scale_shape_manual(values = c(15, 16, 17, 18)) +
+
+geom_signif(
+  comparisons = list(c(1, 2), c(1, 3), c(2, 3)),
+  annotations = paste("p <",pt_out$p.value[-3]),
+  step_increase = 0.15,
+  map_signif_level = TRUE
+)
 
 (barplot | superplot) + plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(size = 20, face = "bold"))
