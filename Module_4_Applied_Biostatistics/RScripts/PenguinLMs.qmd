@@ -348,7 +348,7 @@ rawdata |>
               extend_line = -.005) +
   scale_y_continuous(
     name = "flipper length\nmean \u00b1 95% CI",
-    expand = expansion(mult = .1)) 
+    expand = expansion(mult = .1))
 ```
 
 ## flipper by species and sex (and interaction?)

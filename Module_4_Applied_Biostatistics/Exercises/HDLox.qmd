@@ -1,0 +1,818 @@
+---
+title: "HDLox"
+format: html
+editor: visual
+---
+
+# Tasks
+
+- Import file use only columns up to Smoking (AB)
+
+- use only cases with valid HDLox
+
+- find and recode columns with 1/0 meaning yes/no
+
+- test continuous measures for Normality / logNormality
+
+- outcome of interest Artery Disease (AD): Peripheral/Carotid artery disease (pAVK/cAVK) (0=nein, 1=ja)
+
+- compare characteristics between groups
+
+- analyze relation of HDLox to other biomarkers
+
+- predict AD, try to find a reasonably small model with and without HDLox
+
+# Setup
+
+## Packages
+
+```{r}
+pacman::p_load(
+  conflicted, tidyverse, here, ggplot2, wrappedtools, car, broom,
+  ggbeeswarm, readxl, ggsignif, flextable, DescTools, lme4, easystats,
+  ggsignif, ggh4x, patchwork, GGally)
+
+conflicts_prefer(
+  dplyr::select,
+  dplyr::filter,
+  ggplot2::mean_cl_boot,
+)
+```
+
+## Data preparation
+
+Read in data.
+
+```{r}
+rawdata <- read_excel(
+  path = here("Data/DatensatzHDLox.xlsx"),
+  range = cell_cols("A:AB"),
+)
+head(rawdata)
+```
+
+Removing all rows, where column "HDLox, no unit" has NAs.
+
+```{r}
+rawdata <- rawdata |> filter(!is.na(rawdata[[names(rawdata)[5]]])) |>
+  mutate(
+    `Angiographically confirmed CAD (1=ja, 0=nein), 0 bedeudet angiogr. Ausgeschlossen` = 
+      replace_na(`Angiographically confirmed CAD (1=ja, 0=nein), 0 bedeudet angiogr. Ausgeschlossen`, 0)
+  )
+head(rawdata)
+
+```
+
+Recoding 1/0 into factors with level yes/no. First find all columns where "0=nein" is in column header and change into factors.
+
+```{r}
+rawdata <- rawdata |>
+  mutate(across(contains("0=nein"),
+                ~ factor(.x, levels = c(0, 1),
+                         labels = c("no", "yes"))))
+head(rawdata)
+```
+
+Missed some cases, e.g. "Nein=0" or "0= nein"
+
+```{r}
+rawdata <- rawdata |>
+  mutate(across(contains("0= nein"),
+                ~ factor(.x, levels = c(0, 1),
+                         labels = c("no", "yes")))) |>
+  mutate(across(contains("Nein=0"),
+                ~ factor(.x, levels = c(0, 1),
+                         labels = c("no", "yes"))))
+head(rawdata)
+```
+
+Recoding 1/2 into factors with level male/female. First find all columns where "1=male" is in column header and change into factors.
+
+```{r}
+rawdata <- rawdata |>
+  mutate(across(contains("1=male"),
+                ~ factor(.x, levels = c(0, 1),
+                         labels = c("male", "female")))) |>
+  mutate(across(contains("Adipo"),
+                ~ factor(.x, levels = c(0, 1),
+                         labels = c("no", "yes"))))
+head(rawdata)
+```
+
+Casting Patienten-ID into factor
+
+```{r}
+rawdata <- rawdata |> mutate(
+  `Patienten-ID` = factor(`Patienten-ID`))
+```
+
+Renaming columns using regex: `\\s*` for catching the zero or more white spaces before `\\(`, which in turn catches "(". `.*` will find everything after the opening parenthesis. The second regex finds all "in" as in "HDL in mg/dl" and replaces it with a whitespace. Third finds the units and places them inside \[\].
+
+```{r}
+old_names <- names(rawdata)
+# str_view(names(rawdata), "\\s*\\(.*") # Used to to find regex
+
+rawdata <- rawdata |>
+  rename_with(~ str_remove(.x, "\\s*\\(.*")) |>
+  rename_with(~ str_replace(.x, "\\s{1}in\\s{1}", " ")) |>
+  rename_with(~ str_replace(.x, "\\s{1}(\\w+/\\w+)", " [\\1]"))
+
+# Comparing old names with new names
+tibble(old = old_names, new = names(rawdata)) |> print(n = Inf)
+
+# Final name adjustment can be done manually
+rawdata <- rawdata |>
+  rename(
+    ID = `Patienten-ID`,
+    HDLox = `HDLox, no unit`,
+    `LP(a)` = LP,
+    `HbA1c [%]` = `HbA1c, %`,
+    `Albumin [mg/g]` = `Albumin im Spoturin. [mg/gKrea]`,
+    `eGFR [ml/min/1.73m2]` = `eGFR, [ml/min]/1,73m2`,
+    `Diabetes mellitus` = `Diabetes mell.`,
+    Birthyear = Geburtsdatum, 
+    `Size [cm]` = Größe,
+    `Weight [kg]` = Gewicht,
+    IMT = `IMT average`) |>
+  mutate(Smoking = factor(Smoking, levels = c(0, 1),
+                          labels = c("no", "yes")))
+
+for (row_i in seq(length(rawdata$`LP(a)`))) {
+  rawdata$`LP(a)`[row_i] <- str_remove_all(rawdata$`LP(a)`[row_i], "<")
+  rawdata$`LP(a)`[row_i] <- str_replace(rawdata$`LP(a)`[row_i], ",", ".")
+}
+rawdata <- rawdata |>
+  mutate(`LP(a)` = as.numeric(`LP(a)`))
+
+tibble(old = old_names, new = names(rawdata)) |> print(n = Inf)
+rm(old_names)
+```
+
+Changing birthdays into birthyears.
+
+```{r}
+str_view(rawdata$Birthyear, "-\\d{2}-\\d{2}")
+rawdata$Birthyear <- rawdata$Birthyear |> str_remove_all("-\\d{2}-\\d{2}")
+
+rawdata <- rawdata |> mutate(
+  `LP(a) [nmol/l]` = as.numeric(`LP(a)`),
+  Birthyear = factor(Birthyear))
+```
+
+# Data Exploration
+
+## Test for normality
+
+This would be internally and wouldn't go out. It's my own exploration. Plotting continues data and check for normality, first using a graphical exploration.
+
+```{r}
+numvars <- ColSeeker(varclass = c("numeric"))
+factvars <- ColSeeker(varclass = c("factor"),
+                      exclude = c("ID", "Birthyear"))
+
+plot_list <- list()
+for (measurement_i in numvars$names) {
+  plot_temp <- ggplot(rawdata, aes(x = .data[[measurement_i]])) +
+    geom_density(fill = "lightblue", alpha = 0.5) +
+    stat_theodensity(distri = "norm", linewidth = 0.5, color = "red") 
+  
+  plot_list[[measurement_i]] <- plot_temp
+}
+combined_plot <- wrap_plots(plot_list, ncol = 3)
+combined_plot
+
+rm(plot_temp)
+rm(measurement_i)
+rm(combined_plot)
+rm(plot_list)
+```
+
+Unexpectedly, "Size" looks strange, turns out there was a bad number in the data
+
+```{r}
+rawdata$`Size [cm]`[275] <- rawdata$`Size [cm]`[275] / 100
+rawdata$`Size [cm]` <- rawdata$`Size [cm]` * 100
+rawdata$BMI[275] <- rawdata$`Weight [kg]`[275] / 
+  ((rawdata$`Size [cm]`[275]/100)^2)
+```
+
+```{r}
+plot_list <- list()
+for (measurement_i in numvars$names) {
+  plot_temp <- ggplot(rawdata, aes(x = .data[[measurement_i]])) +
+    geom_density(fill = "lightblue", alpha = 0.5) +
+    stat_theodensity(distri = "norm", linewidth = 0.5, color = "red") 
+  
+  plot_list[[measurement_i]] <- plot_temp
+}
+
+combined_plot <- wrap_plots(plot_list, ncol = 3)
+combined_plot
+
+rm(plot_temp)
+rm(measurement_i)
+rm(combined_plot)
+rm(plot_list)
+```
+
+Albumin also does not look right, let's explore.
+
+```{r}
+ggplot(rawdata, aes(ID, `Albumin [mg/g]`)) +
+  geom_point()
+```
+
+The plot show, that most values are relative small and there are a handfull of outliers.
+
+Testing for normality with Kolmogorov-Smirnov-test against normal distribution. Significance indicates non normal distributed data. The p-value will be overly critical, as the sample size is very large.
+
+```{r}
+rawdata |> 
+  summarise(
+    across(.cols = where(is.numeric),
+           .fns = list(
+             pKS = ~ksnormal(.x,lillie = FALSE) |> 
+               formatP(mark = T)),
+           .names = "{.col}")) |>
+  pivot_longer(cols = where(is.character), # contains("_")
+               names_to = "Measure",
+               values_to = "p-value (KS-test)") |>
+  flextable() |> set_table_properties(layout = "autofit") |> 
+  set_caption("Test for normality")
+```
+
+Test within healthy subjects
+
+```{r}
+rawdata |> 
+  group_by(`Healthy subjects`) |>
+  summarise(
+    across(.cols = where(is.numeric),
+           .fns = list(
+             pKS = ~ksnormal(.x,lillie = FALSE) |> 
+               formatP(mark = T)),
+           .names = "{.col}"), 
+    .groups = "drop") |>
+  pivot_longer(cols = where(is.character), # contains("_")
+               names_to = "Measure",
+               values_to = "p-value (KS-test)") |>
+  flextable() |> set_table_properties(layout = "autofit") |> 
+  set_caption("Test for normality") |> merge_v(j = 1) |> hline(i = 17)
+```
+
+##Test for log-normality log transformation of data.
+
+```{r}
+log_rawdata <- rawdata |>
+  mutate(
+    across(.cols = where(is.numeric),
+           .fns = \(x) log(x)
+    ))
+
+log_rawdata |>
+  summarise(
+    across(.cols = where(is.numeric),
+           .fns = list(
+             pKS = ~ksnormal(.x,lillie = FALSE) |> 
+               formatP(mark = T)),
+           .names = "{.col}")) |>
+  pivot_longer(cols = where(is.character), # contains("_")
+               names_to = "Measure",
+               values_to = "p-value (KS-test)") |>
+  flextable() |> set_table_properties(layout = "autofit") |>
+  set_caption("Test for log-normality")
+
+plot_list <- list()
+for (measurement_i in numvars$names) {
+  plot_temp <- ggplot(rawdata, aes(x = .data[[measurement_i]])) +
+    geom_density(fill = "lightblue", alpha = 0.5) +
+    stat_theodensity(distri = "norm", linewidth = 0.5, color = "red") 
+  
+  plot_list[[measurement_i]] <- plot_temp
+}
+
+combined_plot <- wrap_plots(plot_list, ncol = 3)
+combined_plot
+
+rm(plot_temp)
+rm(measurement_i)
+rm(combined_plot)
+rm(plot_list)
+
+rm(log_rawdata)
+```
+
+## Combined result table
+
+```{r}
+rawdata |>
+  group_by(`Healthy subjects`) |>
+  summarise(
+    across(
+      .cols = where(is.numeric),
+      .fns = list(
+        pKS = \(x) ksnormal(x, lillie = FALSE) |>
+          formatP(mark = TRUE),
+        pKS_log = \(x) ksnormal(log(x), lillie = FALSE)|>
+          formatP(mark = TRUE)
+      ),
+      .names = "{.col}__{.fn}"
+    ),
+    .groups = "drop"
+  ) |>
+  pivot_longer(
+    cols = -`Healthy subjects`, # contains("_")
+    names_to = c("Measure", ".value"),
+    names_sep = "__"
+  ) |>
+  flextable() |> set_table_properties(layout = "autofit") |>
+  set_caption("Test for normality") |> merge_v(j = 1) |>
+  hline(i = 17)
+```
+
+alternative by Andreas
+
+```{r}
+gausstest <-
+  rawdata |>
+  group_by(`Healthy subjects`) |>
+  summarize(across(
+    where(is.numeric),
+    list(
+      "norm" = \(x) ksnormal(x,
+                             lillie = FALSE
+      ),
+      "lognorm" = \(x) ksnormal(log(x),
+                                lillie = FALSE
+      )
+    )
+  )) |>
+  pivot_longer(-`Healthy subjects`,
+               names_to = c("Variable", ".value"),
+               names_sep = "_"
+  ) |>
+  arrange(Variable, `Healthy subjects`) |>
+  pivot_wider(
+    names_from = `Healthy subjects`,
+    values_from = contains("norm"),
+    names_glue = "healthy:{`Healthy subjects`} {.value}"
+  ) |>
+  mutate(across(
+    contains("Healthy"),
+    ~ formatP(.x,
+              ndigits = 5, mark = TRUE
+    )
+  ))
+flextable(gausstest) |>
+  bg(~ str_detect(`healthy:no norm`, "n.s."),
+     j = 2, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:yes norm`, "n.s."),
+     j = 3, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:no lognorm`, "n.s."),
+     j = 4, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:yes lognorm`, "n.s."),
+     j = 5, bg = "lightgreen"
+  ) |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+```
+
+Decision regarding normality: Trust healthy data more If both normal with and without treat log-normal as normal Everything exempt HDLox can be treated as normal. Log-transform of columns. These should also treated as ordinal
+
+## Defining gausvars/ordvars
+
+```{r}
+# Add tiny before log transform to avoid infinte values because of 0
+rawdata <- rawdata |>
+  mutate(
+    IMT_ln = log(IMT + 0.001),
+    `LDL [mg/dl]_ln` = log(`LDL [mg/dl]` + 0.001),
+    `LP(a) [nmol/l]_ln` = log(`LP(a) [nmol/l]` + 0.001),
+    PLA2_ln = log(PLA2 + 0.001),
+    `Triglyceride [mmol/l]_ln` = log(`Triglyceride [mmol/l]` + 0.001),
+    hsCRP_ln = log(hsCRP + 0.001),
+    `HDL [mg/dl]_ln` = log(`HDL [mg/dl]` + 0.001), 
+    `Cholesterin [mmol/l]_ln` = log(`Cholesterin [mmol/l]` + 0.001),
+    `NT proBNP [pg/ml]_ln` = log(`NT proBNP [pg/ml]` + 0.001)
+  )
+
+gausvars <- ColSeeker(
+  varclass = "numeric",
+  namepattern = c("ln", "Size", "Weight", "BMI", "Cholesterin .mmol/l._ln", "IMT"),
+  exclude = c("LP.a.")
+)
+gausvars <- gausvars$names
+# gausvars[5] <- "IMT"
+
+ordvars <- ColSeeker(
+  varclass = "numeric",
+  exclude = c("_ln"),
+  namepattern = c("DL", "ri", "hsCRP", "PLA2", "NTpro", "Age", 
+                  "Albumin", "HbA1c", "NTproBNP [pg/ml]", "eGFR", 
+                  "LP(a) [nmol/l]", "NT proBNP [pg/ml]")
+)
+ordvars
+names(rawdata)
+ordvars <- ordvars$names
+ordvars[12] <- "NT proBNP [pg/ml]"
+ordvars[13] <- "LP(a)"
+```
+
+## Categorical Data Visualizations
+
+```{r}
+for (var_i in factvars$names) {
+  abs_plot <-
+    ggplot(rawdata, aes(x = .data[[var_i]], 
+                        fill = `Peripheral/Carotid artery disease`)) +
+    geom_bar()
+  
+  rel_plot <-
+    ggplot(rawdata, aes(x = .data[[var_i]], 
+                        fill = `Peripheral/Carotid artery disease`)) +
+    geom_bar(position = "fill") +
+    scale_y_continuous("frequency",
+                       labels = scales::percent)
+  
+  print(abs_plot / rel_plot)
+}
+
+for (measurement_i in numvars$names) {
+  plot_temp <- ggplot(rawdata, aes(
+    x = `Peripheral/Carotid artery disease`,
+    y = .data[[measurement_i]],
+    color = `Peripheral/Carotid artery disease`)) +
+    geom_boxplot(colour = "black") +
+    geom_beeswarm(alpha = 0.5)
+  
+  print(plot_temp)
+}
+
+rm(abs_plot, rel_plot, plot_temp, measurement_i, var_i)
+```
+
+# Descriptive Statistics
+
+```{r}
+rawdata |> summarise(
+  across(
+    all_of(numvars$names),
+    .fns = list(
+      n = \(x) n(),
+      mean = \(x) mean(x, na.rm = TRUE) |> roundR(textout = FALSE),
+      median = \(x) median(x, na.rm = TRUE) |> roundR(textout = FALSE),
+      SD = \(x) sd(x, na.rm = TRUE) |> roundR(textout = FALSE),
+      SEM = \(x) SEM(x) |> roundR(textout = FALSE) 
+    ))) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = c("Variable", ".value"),
+    names_sep = "_"
+  ) |>
+  flextable() |>
+  set_table_properties(width = 1, layout = "autofit") |> 
+  set_caption("Overall descriptive statistics")
+```
+
+# Statistical Analysis
+
+## Normal distributed variables
+
+Comparing for differences between the gausvars between healthy and unhealthy subjects
+
+```{r}
+groupvars <- ColSeeker(namepattern = "Healthy")
+plot_list <- list()
+result_list <- list()
+```
+
+Analysis using wrapped tools and compare2numvars. Extraction of test is missing for summary table.
+
+```{r}
+for (measurement_i in seq(length(gausvars))) {
+  result_temp <- compare2numvars(
+    data = rawdata,
+    dep_vars = gausvars[measurement_i],
+    indep_var = groupvars$names,
+    gaussian = TRUE,
+    n = TRUE,
+    mark = FALSE
+  )
+  result_list[[measurement_i]] <- result_temp
+  
+  plot_temp <- ggplot(
+    rawdata,
+    aes(x = .data[[groupvars$names]],
+        y = .data[[gausvars[measurement_i]]],
+        color = `Healthy subjects`)) +
+    geom_beeswarm(alpha = 0.25) +
+    stat_summary(fun.data = mean_sdl,
+                 color = "black") +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = paste("p", formatP(
+        result_list[[measurement_i]]$p,
+        pretext = T, mark = T)),
+      color = "black") +
+    ylab(paste(gausvars[measurement_i], "\nmean \u00b1 95% CI")) +
+    theme(legend.position = "none") +
+    scale_y_continuous(expand = expansion(mult = 0.2))
+  
+  plot_list[[measurement_i]] <- plot_temp
+  print(plot_temp)
+}
+combined_result <- bind_rows(result_list)
+combined_result |> flextable() |> 
+  set_table_properties(layout = "autofit") |>
+  bg(~ `p` < 0.05,
+     j = 8, bg = "lightgreen"
+  )
+
+combined_plot <- wrap_plots(plot_list, ncol = 3, axes = "keep")
+combined_plot
+
+rm(plot_temp)
+rm(measurement_i)
+rm(combined_plot)
+rm(plot_list)
+
+```
+
+Alternative
+
+```{r}
+plot_list <- list()
+result_list <- list()
+
+for (measurement_i in seq(length(gausvars))) {
+  temp_x = rawdata[[gausvars[measurement_i]]][which(rawdata$`Healthy subjects` == "no")]
+  temp_y = rawdata[[gausvars[measurement_i]]][which(rawdata$`Healthy subjects` == "yes")]
+  
+  result_temp <- t.test(
+    x = temp_x,
+    y = temp_y,
+    var.equal = var.test(
+      rawdata[[gausvars[measurement_i]]] ~ rawdata$`Healthy subjects`)$p.value > .05
+  )
+  
+  result_temp_tibble <- tibble(
+    Measure = gausvars[measurement_i],
+    Method = result_temp$method,
+    t = roundR(result_temp$statistic[[1]]),
+    df = roundR(result_temp$parameter[[1]]),
+    `p-value` = formatP(
+      result_temp$p.value, mark = TRUE, pretext = TRUE)
+  )
+  
+  result_list[[measurement_i]] <- result_temp_tibble
+  
+  plot_temp <- ggplot(
+    rawdata,
+    aes(x = .data[[groupvars$names]],
+        y = .data[[gausvars[measurement_i]]],
+        color = `Healthy subjects`)) +
+    geom_beeswarm(alpha = 0.25) +
+    stat_summary(fun.data = mean_cl_normal,
+                 color = "black") +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = paste("p", formatP(
+        result_temp$p.value,
+        pretext = T, mark = T)),
+      color = "black") +
+    ylab(paste(gausvars[measurement_i], "\nmean \u00b1 95% CI")) +
+    theme(legend.position = "none") +
+    scale_y_continuous(expand = expansion(mult = 0.2))
+  
+  plot_list[[measurement_i]] <- plot_temp
+  print(plot_temp)
+}
+combined_result <- bind_rows(result_list)
+combined_result |> flextable() |> 
+  set_table_properties(layout = "autofit")
+
+combined_plot <- wrap_plots(plot_list, ncol = 3, axes = "keep")
+combined_plot
+
+rm(temp_x, temp_y, plot_temp, measurement_i, combined_plot, plot_list)
+
+```
+
+## Ordinal variables
+
+```{r}
+ordvars
+rawdata <- drop_na(rawdata)
+
+plot_list <- list()
+result_list <- list()
+
+for (measurement_i in seq(length(ordvars))) {
+  temp_x = rawdata[[ordvars[measurement_i]]][which(rawdata$`Healthy subjects` == "no")]
+  temp_y = rawdata[[ordvars[measurement_i]]][which(rawdata$`Healthy subjects` == "yes")]
+  
+  result_temp <- wilcox.test(
+    x = temp_x,
+    y = temp_y
+  )
+  
+  result_temp_tibble <- tibble(
+    Measure = ordvars[measurement_i],
+    Method = result_temp$method,
+    w = roundR(result_temp$statistic[[1]]),
+    `p-value` = formatP(
+      result_temp$p.value, mark = TRUE, pretext = TRUE)
+  )
+  
+  result_list[[measurement_i]] <- result_temp_tibble
+  
+  plot_temp <- ggplot(
+    rawdata,
+    aes(x = .data[[groupvars$names]],
+        y = .data[[ordvars[measurement_i]]],
+        color = `Healthy subjects`)) +
+    geom_beeswarm(alpha = 0.25) +
+    stat_summary(fun.data = mean_cl_normal,
+                 color = "black") +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = paste("p", formatP(
+        result_temp$p.value,
+        pretext = T, mark = T)),
+      color = "black") +
+    ylab(paste(ordvars[measurement_i], "\nmean \u00b1 95% CI")) +
+    theme(legend.position = "none") +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1)))
+  
+  plot_list[[measurement_i]] <- plot_temp
+  print(plot_temp)
+}
+combined_result <- bind_rows(result_list)
+combined_result |> flextable() |> 
+  set_table_properties(layout = "autofit")
+
+
+combined_plot <- wrap_plots(plot_list, ncol = 3, axes = "keep")
+combined_plot
+
+rm(temp_x, temp_y, plot_temp, measurement_i, combined_plot, plot_list,
+   result_list, result_temp, result_temp_tibble, row_i, 
+   combined_result)
+```
+
+# Analyzing the relationship between HDLox and other biomarkers
+
+## Correlation
+
+```{r}
+corr_tibble <- cor(
+  rawdata |> select(all_of(gausvars)),
+  method = "pearson"
+  )
+ggpairs( cor(
+  rawdata |> select(all_of(gausvars)),
+  method = "pearson"
+  ) )
+
+# Which biomarkers are correlating with HDLox?
+cortestR(
+  rawdata |> select(all_of(ordvars)),
+  method = "spear",
+) |> 
+  rownames_to_column("Reference") |>
+  select(1:2) |>
+  slice(-1) |>
+  flextable() |> 
+  set_table_properties(layout = "autofit")
+```
+
+## Linear Models
+
+```{r}
+rawdata <- drop_na(rawdata)
+
+result_list <- list()
+
+for (gaus_i in seq(gausvars)) {
+  var_name <- gausvars[gaus_i]
+  form_temp <- reformulate(
+    termlabels = paste0("`", var_name, "`"), 
+    response = "HDLox")
+  
+  plot_temp <- ggplot(
+    rawdata,
+    aes(x = .data[[gausvars[gaus_i]]],
+        y = .data$HDLox)) +
+    geom_point() +
+    geom_smooth(method = "lm", color = "red") +
+    geom_smooth(method = "loess", color = "blue")
+  print(plot_temp)
+  
+  lm_out <- lm(form_temp, data = rawdata)
+  anova_out <- anova(lm_out) |> tidy() |>
+    mutate(
+      p.value = formatP(p.value, ndigits = 5, 
+                        mark = TRUE, pretext = TRUE)) |>
+    add_column(measurement = gausvars[gaus_i] , .before = 1)
+  
+  result_list[[gaus_i]] <- anova_out
+ }
+
+combined_result <- bind_rows(result_list)
+combined_result |> flextable() |> 
+  set_table_properties(layout = "autofit") |> merge_v(j = 1)
+
+rm(form_temp, gaus_i, plot_temp, var_name, result_list, lm_out, 
+   anova_out, combined_result)
+```
+
+Adjusting for healthy/not healthy
+
+```{r}
+result_list <- list()
+
+for (gaus_i in seq(gausvars)) {
+  var_name <- gausvars[gaus_i]
+  form_temp <- reformulate(
+    termlabels = c(paste0("`", var_name, "`"), "`Healthy subjects`"), 
+    response = "HDLox")
+  
+  lm_out <- lm(form_temp, data = rawdata)
+  anova_out <- anova(lm_out) |> tidy() |>
+    mutate(
+      p.value = formatP(p.value, ndigits = 5, 
+                        mark = TRUE, pretext = TRUE)) |>
+    add_column(measurement = gausvars[gaus_i] , .before = 1)
+  
+  result_list[[gaus_i]] <- anova_out
+}
+combined_result <- bind_rows(result_list)
+combined_result |> flextable() |> 
+  set_table_properties(layout = "autofit") |> merge_v(j = 1) |>
+  set_caption("Anova of Linear Models adjusted for healthy subjects")
+```
+
+# Building a multivariable additive model
+
+Using those independent variables, which have shown significance in the univaribale model.
+
+```{r}
+indep_var <- c("`Weight [kg]`", "BMI", "`LDL [mg/dl]_ln`", 
+               "`Triglyceride [mmol/l]_ln`", "hsCRP_ln", 
+               "`HDL [mg/dl]_ln`", "`Cholesterin [mmol/l]_ln`")
+```
+
+# Modeling outcome of interest Artery Disease (AD)
+
+As Artery Disease is a binary value, a generalized linear model with a logit link to a binomial distribution will be used.
+
+## Univariable
+
+```{r}
+indep_var
+
+rawdata <- rawdata |> rename(PAD = `Peripheral/Carotid artery disease`)
+result_list <- ""
+for (var_i in seq(length(indep_var))) {
+  form_temp <- reformulate(indep_var[var_i], response = "PAD")
+  glm_out <- glm(form_temp, family = "binomial", data = rawdata)
+  result_list <- tidy(glm_out)
+}
+
+for (var_i in seq(length(ordvars))) {
+  current_index <- var_i + length(gausvars)
+  predvars[current_index] <- ordvars[var_i]
+}
+rawdata$`Peripheral/Carotid artery disease`
+```
+
+## Building a multivariate additive model
+
+Building with significant measures from the univariable model ORs are difficult to interpret, for prediction univariable is better.
+
+```{r}
+uni_glmms <- tibble(predictor = NA_character_,
+                    OR = NA_real_,
+                    CI_low = NA_real_,
+                    CI_high = NA_real_,
+                    CIs = NA_character_,
+                    p.value = NA_character_,
+                    .rows = 0)
+uni_anova <- tibble(variable = NA_character_,
+                    p.value = NA_character_,
+                    AIC = NA_real_,
+                    BIC = NA_real_,
+                    .rows = 0)
+
+for (pred_i in seq(predvars)) {
+  form <- reformulate(
+    predvars[pred_i], 
+    response = `Peripheral/Carotid artery disease`)
+  uni_glmm <- glm(`Peripheral/Carotid artery disease` ~ `Size [cm]`, data = rawdata)
+ }
+```

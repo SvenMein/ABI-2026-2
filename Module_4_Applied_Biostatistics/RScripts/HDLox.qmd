@@ -1,0 +1,803 @@
+---
+title: "HDLox2024"
+author: "Dr. Jan Itor"
+format: 
+  docx:
+    reference-doc: template2026_2.docx
+    toc: true
+    toc-depth: 4
+    output-file: HDLoxReport202609xx.docx 
+  typst:
+    toc: true
+    lof: true
+    lot: true
+    keep-typ: true
+execute:
+  echo: false
+  warning: false
+  output: asis
+fig-dpi: 300
+fig-width: 6
+fig-height: 4
+editor: visual
+---
+
+\newpage
+
+# Background
+
+Does HDLox differ between subject with/without PAD? Can it improve prediction/diagnosis of PAD?
+
+# Methods
+
+# Analysis
+
+## Setup and import
+
+```{r}
+pacman::p_load(
+  conflicted, tidyverse, wrappedtools,
+  broom, flextable, readxl, here,
+  car, multcomp, pROC,
+  ggbeeswarm, GGally, ggsignif,
+  polyglotr
+)
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::select
+)
+set_flextable_defaults(
+  big.mark = " ",
+  font.size = 9,
+  theme_fun = theme_vanilla,
+  padding.bottom = 1,
+  padding.top = 3,
+  padding.left = 3,
+  padding.right = 4
+)
+set_theme(theme_light())
+pad_colors <- c("darkolivegreen", "darkorange")
+
+internal_version <- TRUE
+```
+
+```{r}
+#| echo: false
+rawdata <-
+  read_excel(here("data/DatensatzHDLox.xlsx")#,
+             # range = cell_cols("A:AB")
+  ) |>
+  select(`Patienten-ID`:`Smoking (Nein= 0, Ja=1)`) |>
+  select(
+    -Geburtsdatum,
+  ) |>
+  rename(
+    `LP(a) nmol/l` = "LP(a) (Lipoprotein a, nmol/l) cut off 120nmol/l",
+    CAD = "Angiographically confirmed CAD (1=ja, 0=nein), 0 bedeudet angiogr. Ausgeschlossen",
+    PAD = "Peripheral/Carotid artery disease (pAVK/cAVK) (0=nein, 1=ja)",
+    Adipositas = "Adipositas (cut off BMI ≥ 30 kg/m2, 0-keine Adipositas, 1-Adipositas Grad 1 oder höher)"
+  ) |>
+  rename_with(
+    \(x) str_replace_all(
+      x, c(
+        " \\( *[01]=.*" = "", # variations of ja nein male 
+        # " \\( *1=.*" = "",
+        " \\(Nein=.*" = "",
+        " \\( *[uU].*" = "", # Umrechnung
+        "NT " = "NT",
+        "\\.{3}\\d+" = "", # added ... for repeated names
+        " in" = "", # prefix for some m. units
+        ", .+" = "",
+        " (.+/.+)" = " [\\1]"
+      )
+    ) |>
+      str_squish()
+  ) |>
+  mutate(
+    `Patienten-ID` = as.character(`Patienten-ID`),
+    Gender = factor(Gender,
+                    levels = c(1, 2),
+                    labels = c("male", "female")
+    ),
+    CAD = replace_na(CAD, 0),
+    `LP(a) [nmol/l]` =
+      str_replace_all(`LP(a) [nmol/l]`, c(
+        "<" = "",
+        "," = "."
+      )) |>
+      as.numeric() |>
+      round(1),
+    across(
+      where( \(x) (length(unique(na.omit(x))) == 2 &
+                 all(unique(na.omit(x)) %in% c(0, 1))
+      )),
+      # c(`Healthy subjects`,
+      #        CAD,PAD, `Diabetes mell.`,
+      #        Hypertension, Smoking, Microalbuminuria,
+      #        Adipositas),
+      .fns = ~ factor(
+        .x,
+        levels = c(0, 1),
+        labels = c("no", "yes")
+      )
+    ),
+    Größe = case_when(Größe > 3 ~ Größe / 100,
+                      .default = Größe
+    ),
+    BMI = Gewicht / Größe^2
+  ) |>
+  # filter_out(is.na(HDLox))
+  drop_na(HDLox, PAD)
+
+german_names <- ColSeeker(
+  namepattern = c("Pat", "G[re]", "Adip", "Chol")
+)
+colnames(rawdata)[german_names$index] <-
+  polyglotr::google_translate(german_names$names,
+                              target_language = "en",
+                              source_language = "de"
+  )
+if (internal_version) {
+  cn()
+}
+  # n_obs <- nrow(rawdata)
+# n_complete <- nrow(drop_na(rawdata))
+```
+
+\newpage
+
+## Test for Normal distribution
+
+```{r}
+#| fig.height: 3
+gausstest <-
+  rawdata |>
+  group_by(`Healthy subjects`) |>
+  summarize(across(
+    where(is.numeric),
+    list(
+      "norm" = \(x) ksnormal(x,
+                          lillie = FALSE
+      ),
+      "lognorm" = \(x) ksnormal(log(x),
+                             lillie = FALSE
+      )
+    )
+  )) |>
+  pivot_longer(-`Healthy subjects`,
+               names_to = c("Variable", ".value"),
+               names_sep = "_"
+  ) |>
+  arrange(Variable, `Healthy subjects`) |>
+  pivot_wider(
+    names_from = `Healthy subjects`,
+    values_from = contains("norm"),
+    names_glue = "healthy:{`Healthy subjects`} {.value}"
+  ) |>
+  mutate(across(
+    contains("Healthy"),
+    ~ formatP(.x,
+              ndigits = 5, mark = TRUE
+    )
+  ))
+if (internal_version) {
+  flextable(gausstest) |>
+    bg(~ str_detect(`healthy:no norm`, "n.s."),
+       j = 2, bg = "lightgreen"
+    ) |>
+    bg(~ str_detect(`healthy:yes norm`, "n.s."),
+       j = 3, bg = "lightgreen"
+    ) |>
+    bg(~ str_detect(`healthy:no lognorm`, "n.s."),
+       j = 4, bg = "lightgreen"
+    ) |>
+    bg(~ str_detect(`healthy:yes lognorm`, "n.s."),
+       j = 5, bg = "lightgreen"
+    ) |>
+    set_table_properties(
+      width = 1,
+      layout = "autofit"
+    )
+  cat("<br>\n\n")
+}
+test_vars <- ColSeeker(rawdata,
+                         varclass = "numeric",
+                         exclude = c("Age")
+  )
+log_vars <- ColSeeker(namepattern = c(
+  "DL ", "Chol", "Tri",
+  "BNP", "hsC", "Alb"
+))
+if (internal_version) {
+  for (var_i in test_vars$names) {
+  plot_out <-
+    ggplot(rawdata, aes(
+      x = .data[[var_i]],
+      fill = `Healthy subjects`
+    )) +
+    geom_density(alpha = .5) +
+    ggtitle(paste(
+      "Control", gausstest |>
+        filter(Variable == var_i) |>
+        pull(`healthy:yes norm`),
+      "Patient", gausstest |>
+        filter(Variable == var_i) |>
+        pull(`healthy:no norm`),
+      collapse = "\n"
+    )) +
+    scale_fill_manual(values = pad_colors)
+  print(plot_out)
+  cat("<br>\n\n")
+  if (var_i %in% log_vars$names) {
+    plot_out2 <-
+      ggplot(rawdata, aes(
+        x = .data[[var_i]],
+        fill = `Healthy subjects`
+      )) +
+      geom_density(alpha = .5) +
+      scale_x_log10(
+        breaks = logrange_15,
+        minor_breaks = logrange_123456789
+      ) +
+      ggtitle(paste(
+        "Control", gausstest |>
+          filter(Variable == var_i) |>
+          pull(`healthy:yes lognorm`),
+        "Patient", gausstest |>
+          filter(Variable == var_i) |>
+          pull(`healthy:no lognorm`),
+        collapse = "\n"
+      )) +
+      scale_fill_manual(values = pad_colors)
+    print(plot_out2)
+  }
+  cat("<br>\n\n")
+  }
+}
+```
+
+```{r}
+log_vars <- ColSeeker(namepattern = c(
+  "DL ", "Chol", "Tri",
+  "BNP", "hsC"
+))
+rawdata <-
+  rawdata |>
+  mutate(across(all_of(log_vars$names),
+                \(x) log(x + 0.001),
+                .names = "{.col} (ln)"
+  ))
+```
+
+When a lognormal distribution is assumed, variables will be log-transformed and treated as gaussian AND will go into ordvars as well.
+
+```{r}
+fact_vars <- ColSeeker(rawdata,
+                       varclass = "factor",
+                       exclude = "PAD"
+)
+gauss_vars <- ColSeeker(rawdata,
+                        varclass = "numeric",
+                        namepattern = c(
+                          "\\(ln\\)", "IMT",
+                          "^Si", "W", "BMI"
+                        )
+)
+ord_vars <- ColSeeker(rawdata,
+                      varclass = "numeric",
+                      namepattern = c(
+                        "DL", "Tri", "Chol", "Albu",
+                        "LP", "hsC", "PLA",
+                        "BNP", "GFR",
+                        "HbA", "Age"
+                      ),
+                      exclude = "\\(ln\\)"
+)
+```
+
+\newpage
+
+## Univariate Analysis for PAD
+
+### Gaussian Variables
+
+```{r}
+cat("<br>\n\n")
+gauss_out <- compare2numvars(
+  rawdata,
+  dep_vars = gauss_vars$names,
+  indep_var = "PAD",
+  gaussian = TRUE,
+  add_n = TRUE,
+  round_desc = 3
+)
+gauss_out |>
+  select(-desc_all) |>
+  flextable() |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+```
+
+```{r}
+for (var_i in gauss_vars$names) {
+  plot_out <-
+    ggplot(rawdata, aes(PAD, .data[[var_i]])) +
+    # geom_boxplot(outlier.alpha=0)+
+    geom_beeswarm(alpha = .2,
+                  aes(color = PAD)) +
+    stat_summary(
+      fun.data = mean_sdl,
+      fun.args = list(mult = 1)#,
+      # color = "darkolivegreen1"
+    ) +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = gauss_out |>
+        filter(Variable == var_i) |>
+        pull(p) |>
+        markSign()
+    ) +
+    scale_y_continuous(
+      paste(var_i, "\n(Mean\u00b1SD)"),
+      expand = expansion(
+        mult = c(0.1, .1)
+      )
+    ) +
+    scale_color_manual(values = pad_colors)
+  print(plot_out)
+  cat("<br>\n\n")
+}
+```
+
+\newpage
+
+### Ordinal Variables
+
+```{r}
+cat("<br>\n\n")
+ord_out <- compare2numvars(
+  rawdata,
+  dep_vars = ord_vars$names,
+  indep_var = "PAD",
+  gaussian = FALSE,
+  add_n = TRUE,
+  round_desc = 3
+)
+ord_out |>
+  select(-desc_all) |>
+  flextable() |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+```
+
+```{r}
+for (var_i in ord_vars$names) {
+  plot_out <-
+    ggplot(rawdata, aes(PAD, .data[[var_i]])) +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_beeswarm(alpha = .2,
+                  aes(color = PAD)) +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = ord_out |>
+        filter(Variable == var_i) |>
+        pull(p) |>
+        markSign()
+    ) +
+    scale_y_continuous(expand = expansion(
+      mult = c(0.1, .1)
+    )) +
+    scale_color_manual(values = pad_colors)
+  if (str_detect(var_i, "Tri|Lox|LP|hsC|BNP|Alb")) {
+    plot_out <- plot_out +
+      scale_y_log10(
+        expand = expansion(
+          mult = c(0.1, .1)
+        ),
+        breaks = logrange_15,
+        minor_breaks = logrange_123456789,
+        labels = prettyNum
+      )
+  }
+  print(plot_out)
+  cat("<br>\n\n")
+}
+```
+
+\newpage
+
+### Factor Variables
+
+```{r}
+cat("<br>\n\n")
+fact_out <- compare2qualvars(
+  rawdata,
+  dep_vars = fact_vars$names,
+  indep_var = "PAD", pretext = TRUE
+)
+fact_out |>
+  select(-desc_all) |>
+  flextable() |>
+  padding(~ p == " ", padding.left = 20) |>
+  bg(~ p != " ", bg = "grey90") |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+```
+
+```{r}
+#| fig.height: 4
+#| fig.width: 3
+for (var_i in fact_vars$names) {
+  plot_out1 <-
+    rawdata |>
+    # filter(!is.na(!!sym(var_i))) |>
+    drop_na(all_of(var_i)) |>
+    ggplot(aes(PAD, fill = .data[[var_i]])) +
+    geom_bar(position = "fill") +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      aes(y = 1.05),
+      annotations = fact_out |>
+        filter(Variable == var_i) |>
+        pull(p) |>
+        markSign()
+    ) +
+    scale_y_continuous(
+      breaks = seq(0, 1, .2),
+      labels = scales::percent,
+      expand = expansion(
+        mult = c(0.1, .1)
+      )
+    ) +
+    theme(legend.position = "bottom") +
+    scale_fill_manual(values = pad_colors)
+  plot_out2 <-
+    rawdata |>
+    # filter(!is.na(!!sym(var_i))) |>
+    drop_na(all_of(var_i)) |>
+    ggplot(aes(.data[[var_i]], fill = PAD)) +
+    geom_bar(position = "fill") +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      aes(y = 1.05),
+      annotations = fact_out |>
+        filter(Variable == var_i) |>
+        pull(p) |>
+        markSign()
+    ) +
+    scale_y_continuous(
+      breaks = seq(0, 1, .2),
+      labels = scales::percent,
+      expand = expansion(
+        mult = c(0.1, .1)
+      )
+    ) +
+    theme(legend.position = "bottom") +
+    scale_fill_manual(values = pad_colors)
+  print(plot_out1+plot_out2)
+  cat("<br>")
+}
+```
+
+\newpage
+
+## Correlations
+
+```{r}
+#| fig.height: 8
+if (internal_version) {
+  rawdata |>
+    select(all_of(gauss_vars$names)) |>
+    rename_with(~ str_wrap(.x, 10)) |>
+    ggpairs(
+      lower = list(
+        continuous =
+          wrap("points", alpha = 0.1)
+      ),
+      upper = list(
+        continuous =
+          wrap("cor",
+               size = 3,
+               method = "pears"
+          )
+      )
+    ) +
+    theme(strip.text = element_text(
+      size = 6,
+      lineheight = 0.9, face = "bold"
+    ))
+  cat("<br>\n\n")
+  rawdata |>
+    select(all_of(ord_vars$names)) |>
+    rename_with(~ str_wrap(.x, 10)) |>
+    ggpairs(
+      lower = list(
+        continuous =
+          wrap("points", alpha = 0.1)
+      ),
+      upper = list(
+        continuous =
+          wrap("cor",
+               size = 3,
+               method = "spearman"
+          )
+      )
+    ) + theme(strip.text = element_text(
+      size = 6,
+      lineheight = 0.9, face = "bold"
+    ))
+  cat("<br>\n\n")
+}
+```
+
+```{r}
+# only ord_vars here for the sake of simplicity...
+cortestR(
+  rawdata |>
+    select(all_of(ord_vars$names)),
+  method = "spear"
+) |>
+  flextable() |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+cortestR(
+  rawdata |>
+    select(all_of(ord_vars$names)),
+  method = "spear"
+) |>
+  rownames_to_column("Reference") |>
+  select(1:2) |>
+  slice(-1) |> 
+  flextable() |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+
+```
+
+## Prediction analysis
+
+### All univariable models
+
+```{r}
+cat("<br>\n\n")
+OR_plotdata_uni <- tibble(
+  Predictor = NA_character_,
+  OR_univ = NA_real_,
+  CI_low_univ = NA_real_,
+  CI_high_univ = NA_real_,
+  p_univ = NA_real_,
+  Significance_univ = NA_character_,
+  .rows = 0
+)
+
+predvars <- c(
+  gauss_vars$bticked,
+  ord_vars$bticked,
+  fact_vars$bticked[-1]
+)
+
+for (var_i in predvars) {
+  glmformula <- paste("PAD~", var_i) |>
+    as.formula()
+  logreg_out <- glm(glmformula,
+                    family = binomial(), data = rawdata
+  )
+  ORs <- exp(logreg_out$coefficients)
+  CIs <- exp(confint(logreg_out))
+  sum_out <- summary(logreg_out)
+  OR_plotdata_uni <- add_row(OR_plotdata_uni,
+                             Predictor = names(ORs)[-1],
+                             OR_univ = ORs[-1],
+                             CI_low_univ = CIs[-1, 1],
+                             CI_high_univ = CIs[-1, 2],
+                             p_univ = sum_out$coefficients[-1, 4]
+  )
+}
+
+OR_plotdata_uni <-
+  mutate(OR_plotdata_uni,
+         Predictor = Predictor |>
+           str_replace_all(
+             c(
+               "`" = "",
+               "yes$" = ": yes",
+               "female" = ": female" # "_"=" ",
+             )
+           ),
+         Significance_univ = p_univ |> markSign()
+  )
+OR_plotdata_uni |>
+  select(-p_univ) |>
+  rowwise() |>
+  mutate(across(2:4, ~ roundR(.x, 4))) |>
+  ungroup() |>
+  arrange(Predictor) |>
+  flextable() |>
+  bold(~ str_detect(Significance_univ, "\\*"),
+       j = 1:2
+  ) |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+```
+
+```{r}
+#| fig.height: 8
+baseplot <- ggplot(
+  OR_plotdata_uni,
+  aes(x = Predictor, y = OR_univ)
+) +
+  geom_pointrange(aes(
+    ymin = CI_low_univ,
+    ymax = CI_high_univ
+  )) +
+  coord_flip() +
+  geom_hline(
+    yintercept = 1,
+    linewidth = .2, linetype = 2
+  ) +
+  scale_y_log10(
+    breaks = logrange_15,
+    minor_breaks = logrange_123456789,
+    guide = guide_axis(n.dodge = 2),
+    labels = prettyNum
+  ) +
+  geom_text(aes(label = Significance_univ),
+            vjust = 1.5, color = "red"
+  ) +
+  ggtitle("OddsRatios shown on log-scale") +
+  xlab(NULL)
+baseplot
+```
+
+\newpage
+
+### Multivariable model
+
+```{r}
+cat("<br>\n\n")
+# predvars
+predvars_m <- ColSeeker(rawdata,
+                        namepattern = ".",
+                        exclude = c(
+                          "PLA", "LP", "CRP",
+                          "PAD", "Heal",
+                          "ID", "BMI",
+                          "Siz", "Gew",
+                          " .ln."
+                        )
+) |>
+  pluck("bticked")
+glmformula_m <-
+  reformulate(predvars_m,response = "PAD")
+pred_data <- rawdata |>
+  select(all_of(bt(predvars_m, remove = TRUE)), PAD) |>
+  drop_na()
+logreg_out_m <- glm(glmformula_m,
+                    family = binomial(), data = pred_data
+)
+# Anova(logreg_out_m)
+ORs_m <- exp(logreg_out_m$coefficients)
+CIs_m <- exp(confint(logreg_out_m))
+sum_out_m <- summary(logreg_out_m)
+OR_plotdata_m <- tibble(
+  Predictor = names(ORs_m)[-1],
+  OR = ORs_m[-1],
+  CI_low = CIs_m[-1, 1],
+  CI_high = CIs_m[-1, 2],
+  p = sum_out_m$coefficients[-1, 4],
+  Significance = markSign(p)
+) |>
+  arrange(OR) |>
+  mutate(Predictor = fct_inorder(Predictor))
+
+OR_plotdata_m |>
+  mutate(across(2:4, ~ roundR(.x, 4)),
+         p = formatP(p, mark = TRUE)
+  ) |>
+  rowwise() |>
+  mutate(across(2:4, ~ roundR(.x, 4))) |>
+  ungroup() |>
+  select(-p) |>
+  flextable() |>
+  bold(~ str_detect(Significance, "\\*"),
+       j = 1:2
+  ) |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+```
+
+```{r}
+#| fig.height: 8
+baseplot_m <- ggplot(
+  OR_plotdata_m,
+  aes(x = Predictor, y = OR)
+) +
+  geom_pointrange(aes(
+    ymin = CI_low,
+    ymax = CI_high
+  )) +
+  coord_flip() +
+  geom_hline(
+    yintercept = 1,
+    linewidth = .2, linetype = 2
+  ) +
+  scale_y_log10(
+    breaks = logrange_15,
+    minor_breaks = logrange_123456789,
+    guide = guide_axis(n.dodge = 2),
+    labels = prettyNum
+  ) +
+  geom_text(aes(label = Significance),
+            vjust = 1.5, color = "red"
+  ) +
+  ggtitle("OddsRatios shown on log-scale") +
+  xlab(NULL)
+baseplot_m
+```
+
+```{r}
+pred_data$pPAD <- predict(logreg_out_m,
+                          type = "response"
+)
+# pROC
+roc_out <- roc(
+  response = pred_data$PAD,
+  predictor = pred_data$pPAD
+)
+youden <- pROC::coords(roc_out, x = "best", best.method = "youden")
+# youden
+ggroc(roc_out, legacy.axes = TRUE) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(
+    x = 1 - youden$specificity,
+    y = youden$sensitivity,
+    color = "red",
+    size = 2
+  ) +
+  annotate(
+    geom = "label",
+    x = 1 - youden$specificity,
+    y = youden$sensitivity,
+    label = paste(
+      "Spec.:", round(youden$specificity, 2),
+      "\nSens.:", round(youden$sensitivity, 2)
+    ),
+    vjust = 1.1,
+    hjust = 0,
+    color = "red"
+  )
+
+ggplot(pred_data, aes(PAD, pPAD)) +
+  geom_boxplot(outlier.alpha = 0) +
+  scale_y_continuous(breaks = seq(0, 1, .1)) +
+  ggbeeswarm::geom_beeswarm(alpha = .25) +
+  geom_hline(
+    yintercept = c(
+      youden$threshold,
+      .5
+    ),
+    color = c("red", "blue"),
+    linetype = 2:3
+  )
+```
