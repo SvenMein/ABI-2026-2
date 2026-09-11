@@ -251,6 +251,7 @@ ggplot(data = result, aes(
   geom_beeswarm(aes(color = Replicate, shape = Replicate),
                 size = 5, cex = 3)
 
+
 ### Modelling
 (anova_out <- lm(`Mean PCC` ~ Strain, data = result))
 (t <- anova(anova_out))
@@ -258,12 +259,12 @@ ggplot(data = result, aes(
 ### Post-hoc analysis
 pt_out <- pairwise.t.test(
   x = result$`Mean PCC`, g = result$Strain,
-  p.adjust.method = "none"
+  p.adjust.method = "bonferroni"
 )
 
 # comparison against the control/wild type strain WT
-pt_out_adj <- p.adjust(pt_out$p.value[, 1], method = "fdr")
-formatP(p.adjust(pt_out$p.value[, 1], method = "fdr"))
+pt_out_adj <- p.adjust(pt_out$p.value[, 1], method = "bonferroni")
+p <- formatP(p.adjust(pt_out$p.value[, 1], method = "bonferroni"))
 
 
 # Data Visualization ####
@@ -303,13 +304,30 @@ superplot <- basic_plot + geom_beeswarm(data = rawdata,
   stat_summary(geom = "point", shape = "-", size = 15) +
   scale_y_continuous(limits = c(-0.4, 1), n.breaks = 8) +
   scale_shape_manual(values = c(15, 16, 17, 18)) +
+  geom_signif(comparisons = list(c(1, 2), c(1, 3)),
+              annotations = paste("p",
+                                  formatP(pt_out_adj,
+                                          pretext = T,
+                                          mark = T)))
 
-geom_signif(
-  comparisons = list(c(1, 2), c(1, 3), c(2, 3)),
-  annotations = paste("p <",pt_out$p.value[-3]),
-  step_increase = 0.15,
-  map_signif_level = TRUE
-)
+basic_plot +
+  geom_beeswarm(aes(color = Replicate, shape = Replicate),
+                size = 5, cex = 3) +
+  geom_errorbar(data = result_summary, aes(ymin = `Mean PCC` - SE,
+                                           ymax = `Mean PCC` + SE),
+                width = 0.1, colour = "black", linewidth = 1) +
+  stat_summary(geom = "point", shape = "-", size = 15) +
+  scale_y_continuous(limits = c(0, 1), n.breaks = 8,
+                     expand = expansion(mult = .05, .15)) +
+  scale_shape_manual(values = c(15, 16, 17, 18)) +
+  geom_signif(comparisons = list(c(1, 2), c(1, 3), c(2,3)),
+              annotations = paste("p",
+                                  formatP(pt_out$p.value[-3],
+                                          pretext = T,
+                                          mark = T)),
+              step_increase = 0.15) +
+  scale_y_continuous("PCC", expand = expansion(mult = c(.05, .15))) +
+  guides(fill = "none")
 
 (barplot | superplot) + plot_annotation(tag_levels = "A") &
   theme(plot.tag = element_text(size = 20, face = "bold"))

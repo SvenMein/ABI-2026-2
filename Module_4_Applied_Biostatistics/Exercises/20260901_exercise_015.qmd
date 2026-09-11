@@ -1,0 +1,242 @@
+---
+title: "20260901_exercise_015"
+author: "Sven Meinerz"
+format: 
+  docx:
+    reference-doc:  template_class.docx
+    toc: true
+    toc-depth: 3
+    toc-title: Table of Content
+editor: visual
+execute: 
+  echo: false # Does not show code in rendered document
+  warning: false # Common option, hides warnings; errors will still break the code
+  output: asis # as is, rendering will not round numbers etc. Leave the output as it is
+fig-dpi: 300
+fig-width: 6
+fig-height: 8
+---
+
+## Setup
+
+Load in all needed packages and solve conflicts
+
+```{r}
+pacman::p_load(
+ car, conflicted, tidyverse, ggplot2, wrappedtools, flextable,
+ broom, DescTools
+)
+conflicts_prefer(
+  dplyr::select,
+  dplyr::filter,
+  ggplot2::mean_cl_boot,
+  modelbased::standardize
+)
+```
+
+## Read in the dataset
+
+```{r}
+rawdata <- as_tibble(carData::Greene) |> drop_na() |> 
+  mutate(rawdata,
+    nation = fct_lump_min(nation, min = 15) |>
+      fct_infreq(),
+    location = fct_recode(location, "Other" = "other") |>
+      fct_infreq(),
+    judge = fct_infreq(judge),
+    language = fct_infreq(language)
+  )
+head(rawdata)
+```
+
+The dataset seems fine, no need for data clean-up or changing of datatypes.
+
+## Data exploration
+
+```{r}
+#| echo: false
+ggplot(rawdata, aes(nation, fill = fct_rev(decision))) +
+  geom_bar(position = "fill") +
+  scale_y_continuous("Frequency", labels = scales::percent) +
+  scale_fill_manual("decision",
+                    values = c("lightblue", "salmon"),
+                    labels = c("yes", "no")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+#| echo: false
+ggplot(rawdata, aes(language, fill = fct_rev(decision))) +
+  geom_bar(position = "fill") +
+  scale_y_continuous("Frequency", labels = scales::percent) +
+  scale_fill_manual("decision",
+                    values = c("lightblue", "salmon"),
+                    labels = c("yes", "no")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+#| echo: false
+ggplot(rawdata, aes(judge, fill = decision)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous("Frequency", labels = scales::percent) +
+  scale_fill_manual("decision",
+                    values = c("lightblue", "salmon"),
+                    labels = c("yes", "no")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+#| echo: false
+ggplot(rawdata, aes(location, fill = decision)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous("Frequency", labels = scales::percent) +
+  scale_fill_manual("decision",
+                    values = c("lightblue", "salmon"),
+                    labels = c("yes", "no")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+As some countries only have a few data points, buiulding a model on those data would be overfitting. To amend this situation we can group all countries with less than 10 caeses inside a "catch all" category.
+
+```{r}
+#| echo: true
+rawdata <- mutate(rawdata, nation = fct_lump_min(nation, min = 10))
+table(rawdata$nation)
+```
+
+## Modelling
+
+Defining all predictor variables
+
+```{r}
+predvar <- ColSeeker(data = rawdata,
+                     namepattern = c("jud", "atio", "lan"))
+```
+
+### Univariable Model
+
+First lets try building a univariable model.
+
+```{r}
+report <- tibble(
+  predictor = character(),
+  statistic = numeric(),
+  df = numeric(),
+  p.value = character()
+)
+
+for (pred_i in seq(predvar$names)) {
+  
+  # Build the model
+  form = reformulate(predvar$names[pred_i], response = "decision")
+  log_reg_out <- glm(
+    form, 
+    family = binomial(),
+    data = rawdata
+  )
+  
+  log_reg_out |> tidy() |> 
+    mutate(p.value = formatP(p.value, ndigits = 5, mark = TRUE)) |>
+    flextable() |> set_table_properties(layout = "autofit") |> 
+    flex2rmd()
+  sum_out <- tidy(log_reg_out)
+  
+  Anova_out_uni <- Anova(log_reg_out, type = 2) |> tidy() |>
+  mutate(p.value = formatP(p.value, ndigits = 5, mark = TRUE))
+  
+  report <- report |> add_row(predictor = predvar$names[pred_i],
+                  statistic = Anova_out_uni$statistic, 
+                  df = Anova_out_uni$df, 
+                  p.value = Anova_out_uni$p.value)
+  
+  ORs <- exp(log_reg_out$coefficients)
+  CIs <- exp(confint(log_reg_out))
+  
+  # Structure for visualization
+  OR_plotdata <- tibble(
+  Predictor = names(ORs)[-1],
+  OR = ORs[-1],
+  CI_low = CIs[-1, 1],
+  CI_high = CIs [-1, 2],
+  p = sum_out$p.value[-1],
+  Significance = markSign(p),
+  label = paste(Predictor, Significance) |> fct_inorder()
+  )
+  # Plotting
+  temp_plot <- ggplot(OR_plotdata, aes(x = Predictor, y = OR)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high)) +
+  geom_hline(yintercept = 1, linewidth = .5, linetype = 2) +
+  coord_flip() +
+  scale_y_log10(
+    breaks = logrange_1,
+    minor_breaks = logrange_123456789,
+    limits = c(0.1, 2*10^4),
+    labels = prettyNum) +
+  geom_text(aes(label = Significance), vjust = 1.25, color = "red") +
+  xlab(NULL)
+  
+  print(temp_plot)
+}
+report |> flextable() |> set_table_properties(layout = "autofit")
+```
+
+### Multivariable Model
+
+```{r}
+glm_formula <- reformulate(predvar$names, response = "decision")
+log_reg_out <- glm(
+  glm_formula, family = binomial(), data = rawdata
+)
+log_reg_out
+
+ORs <- exp(log_reg_out$coefficients)
+CIs <- exp(confint(log_reg_out))
+
+Anova_out_multi <- Anova(log_reg_out, type = 2) |>
+  tidy() |> mutate(p.value = formatP(p.value, ndigits = 5, 
+                                     mark = TRUE))
+Anova_out_multi |> mutate() |>
+  flextable() |> 
+  set_table_properties(layout = "autofit")
+
+sum_out <- tidy(log_reg_out)
+
+tibble(
+  Formula = deparse1(glm_formula),
+  AIC = AIC(log_reg_out),
+  BIC = BIC(log_reg_out)) |>
+  flextable() |> set_table_properties(layout = "autofit")
+```
+
+#### Visualization
+
+```{r}
+OR_plotdata <- tibble(
+  Predictor = names(ORs)[-1] |>
+      str_replace("([:lower:])([:upper:])", "\\1: \\2"),
+  OR = ORs[-1],
+  CI_low = CIs[-1, 1],
+  CI_high = CIs[-1, 2],
+  p = sum_out$p.value[-1],
+  Significance = markSign(p),
+  Label = paste(Predictor, Significance) |> 
+    fct_inorder()
+)
+
+ggplot(OR_plotdata, aes(x = Predictor, y = OR)) +
+  geom_pointrange(aes(ymin = CI_low, ymax = CI_high)) +
+  geom_hline(yintercept = 1, linewidth = .5, linetype = 2) +
+  coord_flip() +
+  scale_y_log10(
+    breaks = logrange_12357,
+    minor_breaks = logrange_123456789,
+    guide = guide_axis(n.dodge = 2),
+    labels = prettyNum,
+    expand = expansion(mult = .1)) +
+  geom_text(aes(label = Significance), 
+            vjust = 1.5, color = "red", size = 4) +
+  ggtitle("OddsRatios for leave to appeal granted\nshown on log-scale") +
+  labs(caption = "Results from multivariable glms,\nOddsRatios shown on log-scale") +
+  xlab(NULL)
+```

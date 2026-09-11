@@ -9,7 +9,7 @@ format:
     toc-title: Table of Content
 editor: visual
 execute: 
-  echo: false # We get the source code than the output, must of time disabled is best option
+  echo: false # Does not show code in rendered document
   warning: false # Common option, hides warnings; errors will still break the code
   output: asis # as is, rendering will not round numbers etc. Leave the output as it is
 fig-dpi: 300
@@ -19,12 +19,13 @@ fig-height: 8
 
 # Setup
 
+Load in all the needed packages.
+
 ```{r}
-#| echo: true
 pacman::p_load(
- conflicted, tidyverse, here, ggplot2, wrappedtools,
+ car, conflicted, tidyverse, here, ggplot2, wrappedtools,
  ggbeeswarm, readxl, ggsignif, patchwork, ggh4x, flextable, TOSTER,
- nlme, broom, DescTools, lme4, merTools, gg4x, lme4
+ nlme, broom, DescTools, lme4, merTools, lme4, easystats, haven
 )
 conflicts_prefer(
   dplyr::select,
@@ -36,7 +37,7 @@ conflicts_prefer(
 
 # Data Import
 
-Importing data from an excel file. Data is inside the sheet called "rawdata".
+Import data from an excel file. Data is inside the sheet called "rawdata".
 
 ```{r}
 #| echo: true
@@ -47,31 +48,24 @@ rawdata <- read_excel(
 rawdata <- mutate(
   .data = rawdata,
   Strain = factor(Strain,
-                     levels = c("WT", "Mut1", "Mut2"))
+                     levels = c("WT", "Mut1", "Mut2")),
+  Replicate = factor(Replicate)
 )
 ```
 
 # Graphical Data exploration
 
-## Quick check of data distribution
+First let's take a look at the data and try to eyeball what an appropriate model for the data might be. First we check for a general linear model.
 
-Here we check distribution of the PCC values and overlay a theoretical, normal distributed curve based on the measured values.
+The following plots will aggregate all data all the way down to Strain x Timepoint. This is generally a very bad idea, although there may be some cases, where this is a reasonable simplification. There are three reasons, why this is a bad idea:\
 
-```{r}
-#| echo: true
+1.  **Within-sample variability is lost.** You will throw away any information how much cells vary within a sample/replicate and how much samples vary within a strain or cell line. That variability is exactly what you need to correctly judge whether a difference between strains is real or just noise.\
 
-ggplot(rawdata, aes(PCC)) + 
-  geom_density(fill = "lightblue", alpha = 0.5) +
-  stat_theodensity(distri = "norm", linewidth = 0.5, color = "red") +
-  facet_wrap(facets = vars(Strain))
+2.  **Sample size collapses artificially.** If you have, say, 3 samples × 5 time points × 2 strains, and you average all the way down to Strain × Timepoint, you're left with only 10 data points total, one per cell, although you started with hundreds of measurements. This will drop the statistical power enormously and any test will be under powered, leading to misleading p-values.\
 
-```
+3.  **You can't distinguish sample-level from cell-level effects anymore.** If most of the biological variability is between samples and you average over samples too, you're essentially treating your whole experiment as n=1 per strain, which is almost never enough for inference.\
 
-Based on these plots we can assume, that the PCC values are not normal distributed, as they deviated from theoretical distribution.
-
-## Exploration for data modelling
-
-Next we look into our data and try to eyeball what an appropriate model for the data might be. First we check for a general linear model.
+But averaging within Sample x Timepoint is defensible as this collapses cell-level replication, which usually isn't our main interest anyway, while preserving the Sample level as your biological replicate
 
 ```{r}
 #| echo: true
@@ -96,27 +90,39 @@ ggplot(rawdata, aes(Timepoint, PCC, color = Strain)) +
   geom_smooth() +
   scale_y_continuous(name = "PCC\nmean \u00b1 95% CI", limits = c(0, 0.75)) +
   xlab("elapsed time [min]")
+
 ```
 
 As we see in the two generated plots, the red line from the linear regression is quiet different from the result from the loess method. This was expected for a number of reasons:\
-1. From the experiment performed, we expected at first a rise of the PCC values, than the longer the time goes on that will fall again.\
-2. PCC values are hard limited, meaning they always have a value between -1 and 1. It would not be appropriate to use a linear regression to predict values outside of this range.
+
+1.  From the experiment performed, we expected at first a rise of the PCC values, than the longer the time goes on that will fall again.\
+
+2.  PCC values are hard limited, meaning they always have a value between -1 and 1. It would not be appropriate to use a linear regression to predict values outside of this range.\
 
 Let's take a moment and think about our data: We have one measured, dependent variable (PCC) and two independent variables (Strain and Timepoint). Based on this a linear mixed model (LMM) seems to be more appropriate.
 
 # Building the Linear Mixed Model
+
 ## Random Intercept Model
+
 ```{r}
-lmer_out <- lmer(PCC ~ Strain + (1 | Timepoint), data = rawdata)
-lmer_out
+#| echo: true # Do show this chunk in the rendered document
+#| output: false # Do not show the output/result of this chunk
+rawdata <- rawdata |> rename(Sample = Replicate)
+rawdata$Sample <- factor(paste(rawdata$Strain, rawdata$Sample, sep = "_"))
+lmer_out <- lmer(PCC ~ Strain * Timepoint + (1 | Sample), data = rawdata)
+tidy(lmer_out)
 (Anova(lmer_out))
+tidy(Anova(lmer_out))
 ```
 
 ```{r}
+#| echo: true # Do show this chunk in the rendered document
+#| output: false # Do not show the output/result of this chunk
 (lmer_out_param <- model_parameters(lmer_out, group_level = TRUE))
 intercept_all <- lmer_out_param$Coefficient[1]
-slope_Ang <- lmer_out_param$Coefficient[2]
-slope_What <- lmer_out_param$Coefficient[3]
+slope_Mut1 <- lmer_out_param$Coefficient[2]
+slope_Mut2 <- lmer_out_param$Coefficient[3]
 plotdata <- tibble(
   Timepoint = lmer_out_param$Level[-(1:3)],
   intercept = lmer_out_param$Coefficient[-(1:3)] +
@@ -125,4 +131,68 @@ plotdata <- tibble(
 
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+# Reduced data points, just 3 time points
+asd
+```{r}
+temp <- rawdata |> filter(
+  Timepoint == 0 | Timepoint == 10 | Timepoint == 60) |>
+  mutate(Timepoint = factor(Timepoint))
+
+lm_out <- lm(PCC ~ Strain * Timepoint, data = temp)
+check_model(lm_out)
+Anova_out <- Anova(lm_out, type = 3) |> tidy() |> 
+  mutate(p.value = formatP(p.value,4))
+
+posthoc <- summary(glht(model = lm_out,
+             linfct = mcp(Strain = 'Tukey',
+                        Timepoint = "Tukey"))) |> 
+  tidy()
+posthoc |> 
+  mutate(adj.p.value = formatP(adj.p.value, 5, mark = T)) |> 
+  flextable()
+
+post_hoc <- summary(glht(model = lm_out,
+             linfct = mcp(species_sex = 'Tukey'))) |> 
+  tidy()
+
+temp |> 
+  ggplot(aes(Timepoint,PCC, color = Strain)) +
+  geom_beeswarm(alpha = .25,
+                dodge.width = .75) +
+  stat_summary(position = position_dodge(width = .75),
+               fun.data = mean_cl_normal) +
+  stat_summary(fun = mean,geom = "line", 
+               aes(group = Strain),
+               position = position_dodge(width = .75)) +
+  ylab("PCC\nmean\u00b1 95% CI")
+
+  geom_signif(comparisons = list(c(1,2),c(1,3), c(2,3)),
+              annotations = posthoc$adj.p.value[-4] |> 
+                formatP(),#markSign(),
+              y_position = c(240,250,240),
+              extend_line = -.005,
+              color = "black") +
+  scale_y_continuous(expand = expansion(mult = .1)) +
+  scale_color_manual(
+    name = paste('sex\n p ', 
+                 Anova_out |> 
+                   filter(term == "sex") |> 
+                   pull(p.value) |> 
+                   formatP(pretext = TRUE)),
+    values = gmx_colors) +
+  annotate(geom = "label", x = 3.75, y = 215,
+           label = paste("interaction\nsex*species\np",
+                         Anova_out |> 
+                           filter(term == "species:sex") |> 
+                           pull(p.value) |> 
+                           formatP(pretext = TRUE))) +
+  scale_x_discrete(expand = expansion(add = c(.5,1.25))) +
+  geom_signif(xmin = c(.9,1.9, 2.9), 
+              xmax = c(1.1, 2.1,3.1), 
+              y_position = c(220,225, 235), 
+              annotations = paste("p",
+                                  nested_p$p.value |> 
+                                    formatP(pretext = T, 
+                                            mark = T)),
+              color = "black", textsize = 2.5)
+```

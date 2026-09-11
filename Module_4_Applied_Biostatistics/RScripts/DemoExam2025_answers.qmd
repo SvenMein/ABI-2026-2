@@ -1,0 +1,196 @@
+---
+title: "Demo Exam Statistics"
+author: Jan Itor
+format: docx
+editor: visual
+markdown: 
+  wrap: 60
+---
+
+# Any packages needed? put them here!
+
+```{r}
+pacman::p_load(conflicted,tidyverse,wrappedtools,writexl, car, broom)
+```
+
+Please give your answers underneath the question, referencing question numbers. Please answer outside code chunks or format text answers as comments.
+
+# Q1: Please generate the following sequences of numbers:
+
+## q1a: Numbers from 100 to 199
+
+```{r}
+#q1a<-c(100,101,102...)
+q1a2 <- 100:199
+q1a3 <- seq(100,199,1)
+```
+
+## q1b: 100 random data from a uniform distribution between 100 and 199
+
+```{r}
+q1b <- runif(n = 100,min = 100,max = 199)
+```
+
+## q1c: 100 random data from a normal distribution with mean=100 and variance=10
+
+```{r}
+q1c <- rnorm(n = 100,mean = 100,sd = sqrt(10))
+```
+
+## q1d: 100 random data from a log normal distribution with log(mean)=5 and log(sd)=0.5
+
+```{r}
+q1d <- rlnorm(n = 100,meanlog = 5,sdlog = 0.5)
+```
+
+## q1e: 100 random data from a factor with levels 1 and 2 in a ratio of 7:3.
+
+```{r}
+q1e <- sample(x = c(1,2),size = 100,replace = TRUE,
+              prob = c(0.7,0.3)) |> as.factor()
+set.seed(321)
+q1e <- sample(x = factor(c(1,2)),size = 100,replace = TRUE,
+              prob = c(0.7,0.3))
+```
+
+# Q2: Please name statistical tests or class of analyses for the following analytical problems:
+
+## q2a: Test for normal distribution
+
+Shapiro-Wilk test, Kolmogorov-Smirnov test; ks.test() ..
+
+## q2b: Multiple comparison for means between 3 or more groups for a Gaussian measure
+
+ANOVA, lm(), post-hoc tests like pairwise.t.test, Dunnet, Tukey...
+
+# Q3: Assign the dataset mtcars to a new tibble
+
+```{r}
+newby <- as_tibble(mtcars)
+class(newby)
+```
+
+# Q4: For the columns in Q3, please state if the data most likely represent Gaussian measures, ordinal measures, or categories
+
+I treat cyl, cs, and am as factors.
+
+```{r}
+str(newby)
+fact_vars <- c("cyl","vs","am","gear")
+ord_vars <- c("carb")
+gauss_vars <- c("mpg","disp","hp","drat","wt","qsec")
+```
+
+# Q5: For all numerical variables, test for Normal distribution.
+
+```{r}
+summarize(newby,
+          across(where(is.numeric),
+                 ~shapiro.test(.x)$p.value)) |>
+  pivot_longer(everything()) |>
+  mutate(Gaussian=case_when(value>=0.05~"yes",
+                            .default="no"))
+gauss_vars <- ColSeeker(newby,namepattern = c("t","mpg","q"))
+ord_vars <- ColSeeker(newby, namepattern = c("cyl","dis","hp"))
+```
+
+# Q6
+
+## q6a: For all data assumed to follow a normal distribution, test for group differences between the various numbers of cylinders
+
+## q6b: Save descriptive statistics for groups and p-value for a group effect in one or several result tables
+
+```{r}
+# approach 1 with single function:
+all_out <-
+  compare_n_numvars(.data = newby,
+                    dep_vars = gauss_vars$names,
+                    indep_var = "cyl",gaussian = TRUE)
+q6ab1 <- 
+  all_out$results |>
+  select(Variable,contains(" fn"), multivar_p) 
+# approach 2 with summarize(acros...) in 2 steps
+q6a <- newby |>
+  group_by(cyl) |>
+  summarize(across(all_of(gauss_vars$names),
+                   ~meansd(.x,range = T))) |>
+  pivot_longer(-cyl,names_to = "Variable",
+               values_to = "DescStats") |>
+  pivot_wider(names_from = cyl,values_from = DescStats)
+q6b <- newby |>
+  summarize(across(all_of(gauss_vars$names),
+                   ~lm(.x~cyl) |>
+                     anova() |>
+                     slice(1) |>
+                     pull("Pr(>F)") |>
+                     formatP(5,mark = T))) |>
+  pivot_longer(everything(), names_to="Variable",
+               values_to="p-value")
+q6ab2 <- full_join(q6a,q6b)
+# approach 3 with a loop, here just for posthoc but can be extend
+# loop for pairwise t-tests
+posthoc_out <- tibble(Variable=NA_character_,
+                      p4vs.6=NA_character_,
+                      p4vs.8=NA_character_,
+                      p6vs.8=NA_character_,
+                      .rows = 0)
+for(var_i in gauss_vars$names){
+  t_out <- pairwise_t_test(newby[[var_i]],newby$cyl,
+                           adjmethod="fdr")$p.value |>
+    formatP()
+  posthoc_out <- posthoc_out |>
+    add_row(Variable=var_i,
+            p4vs.6=t_out[1,1],
+            p4vs.8=t_out[2,1],
+            p6vs.8=t_out[2,2])
+}
+```
+
+## q6c: Export the result table(s) in an Excel file
+
+```{r}
+write_xlsx(q6ab1,"Q6ab.xlsx")
+write_xlsx(list(desc=q6a,anova=q6b,posthoc=posthoc_out),
+           "Q6.xlsx")
+```
+
+# Q7: Test regression between independent variable wt and dependent variable mpg
+
+## q7a: report the regression parameters
+
+```{r}
+lmq7 <- lm(mpg~wt,data = newby)
+cat("Regression parameters: \n", "Intercept: ", lmq7$coefficients[1],
+    "Slope: ", lmq7$coefficients[2])
+```
+
+## q7b: report significance for regression parameters
+
+```{r}
+anova(lmq7) |>
+  pluck("Pr(>F)") |>
+  na.omit() |>
+  formatP(5,mark = T)
+```
+
+# Q8: Test the relation between dependent variable am and independent variables wt and mpg
+
+## q8a: report the model parameters
+
+```{r}
+lmq8 <- glm(am~wt+mpg,data = newby,
+            family=binomial())
+cat("Regression parameters: \n", "Intercept: ", lmq8$coefficients[1],
+    " OR wt: ", exp(lmq8$coefficients[2]),
+    "\n OR mpg: ", exp(lmq8$coefficients[3]))
+```
+
+## q8b: report significance for model parameters
+
+```{r}
+car::Anova(lmq8) |>
+  tidy() |> 
+  mutate(p.value = formatP(p.value, ndigits = 5,mark = T))
+```
+
+Good luck!

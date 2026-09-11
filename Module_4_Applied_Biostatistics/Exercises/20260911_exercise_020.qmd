@@ -1,0 +1,328 @@
+---
+title: "Cervical tidymodels"
+format: html
+editor: visual
+---
+
+# Setup
+
+```{r}
+pacman::p_load(
+  conflicted,
+  tidyverse,
+  palmerpenguins,
+  tidymodels,
+  kernlab, # SVM engines
+  rpart, # Decision Trees
+  klaR, # Naive Bayes
+  nnet, # Neural Networks and Multinomial Regression
+  ranger, # Fast Random Forest
+  xgboost, # Gradient Boosting
+  kknn, # Weighted KNN
+  discrim, # For LDA and Naive Bayes engines
+  C50,
+  glmnet,
+  ggbeeswarm,
+  ggforce,
+  workflowsets,
+  vip, # Buuuuh bad package
+  future.mirai, mirai, 
+  wrappedtools,
+  flextable
+)
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::slice,
+  palmerpenguins::penguins,
+  vip::vi
+)
+```
+
+# Data loading
+
+```{r}
+rawdata <- readRDS("data/cervical.RDS")
+predvars <- ColSeeker(rawdata, "_")
+```
+
+# Pre-processing
+
+```{r}
+base_recipe <- recipe(rawdata) |>
+  update_role(Tissuetype, new_role = "outcome") |>
+  update_role(all_of(predvars$names), new_role = "predictor") |>
+  update_role(SampleID, PatID, new_role = "id") |>
+  step_nzv(all_predictors())
+
+norm_recipe <- base_recipe |> 
+  step_YeoJohnson(all_predictors()) |> # Unskews data, makes it "normalish"
+  step_corr(all_predictors(), method = "spearman") |>
+  step_percentile(all_predictors(), outside = "both")
+```
+
+# Defining the models
+
+```{r Multinomial Regression}
+# Here not very useful, we have a binary decision (Control/Tumor)
+multinom_spec <- multinom_reg(penalty = tune(), mixture = tune()) |>
+  set_engine("glmnet", family = "multinomial", nlambda = 100) |>
+  set_mode("classification")
+```
+
+```{r Decision Trees}
+tree_grid <- expand.grid(
+  tree_depth = seq(10, 50, by = 2),
+  cost_complexity = c(0.05, 0.01, 0.001),
+  min_n = seq(4, 10, by = 2)
+) |>
+  as_tibble()
+
+tree_grid |>
+  ggplot(aes(x = .panel_x, y = .panel_y)) +
+  geom_point() +
+  geom_blank() +
+  facet_matrix(vars(tree_depth, cost_complexity, min_n),
+    layer.upper = FALSE, layer.diag = 2
+  ) +
+  labs(title = str_glue("Crossed design with {nrow(tree_grid)} combinations"))
+
+tree_spec <- decision_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+) |>
+  set_engine("rpart", model = TRUE) |>
+  set_mode("classification")
+```
+
+```{r Random Forest}
+rf_grid <- expand.grid(mtry = 10:50) |>
+  as_tibble()
+
+rf_spec <- rand_forest(
+  trees = 10000,
+  mtry = tune()
+) |>
+  set_engine("ranger", importance = "impurity") |>
+  set_mode("classification")
+```
+
+```{r K-Nearest Neighbors}
+knn_spec <- nearest_neighbor(
+  neighbors = tune(),
+  weight_func = "triangular"
+) |>
+  set_engine("kknn") |>
+  set_mode("classification")
+```
+
+```{r XGBoost}
+xgb_grid <- grid_space_filling(
+  tree_depth(range = c(2, 12)), # Searches between 2 and 10
+  trees(range = c(50, 200)),
+  learn_rate(),
+  loss_reduction(range = c(0, 10)),
+  min_n(range = c(5, 20)),
+  # finalize(sample_size(), rawdata),
+  finalize(mtry(), rawdata),
+  size = 100 # How many combinations will be tested
+)
+xgb_grid |>
+  mutate(learn_rate = log10(learn_rate)) |>
+  ggplot(aes(x = .panel_x, y = .panel_y)) +
+  geom_point() +
+  geom_blank() +
+  facet_matrix(vars(everything()),
+    layer.upper = FALSE, layer.diag = 2
+  ) +
+  labs(title = str_glue("Space-filling design with {nrow(xgb_grid)} combinations"))
+xgb_spec <- boost_tree(
+  trees = tune(),
+  tree_depth = tune(),
+  min_n = tune(),
+  loss_reduction = tune(),
+  mtry = tune(),
+  # sample_size = tune(),
+  learn_rate = tune()
+) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+```
+
+```{r C5.0 Decision Trees}
+c50_spec <- boost_tree(trees = 100) |>
+  set_engine("C5.0") |>
+  set_mode("classification")
+```
+
+```{r LDA}
+lda_spec <- discrim_linear() |>
+  set_engine("MASS") |>
+  set_mode("classification")
+```
+
+```{r Support Vector Machines}
+svm_spec <- svm_poly(cost = tune(), degree = tune()) |>
+  set_engine("kernlab") |>
+  set_mode("classification")
+```
+
+```{r Naive Bayes}
+nb_spec <- naive_Bayes(smoothness = tune()) |>
+  set_engine("klaR", usekernel = TRUE) |>
+  set_mode("classification")
+```
+
+```{r MLP}
+mlp_spec <- mlp(
+  hidden_units = tune(),
+  penalty = tune(),
+  epochs = 500
+) |>
+  set_engine("nnet", MaxNWts = 2000) |>
+  set_mode("classification")
+```
+
+```{r Logistic Regression with Elastic Net}
+elastic_spec <- logistic_reg(penalty = tune(), mixture = tune()) |>
+  set_engine("glmnet")
+```
+
+# Competitive Model Evaluation
+
+```{r}
+model_set_base <-
+  workflow_set( # Builds the cross of all recipies and model combinations
+    preproc = list(base = base_recipe),
+    models = list(
+      dec_tree = tree_spec,
+      rf = rf_spec,
+      xgb = xgb_spec,
+      c50 = c50_spec, 
+    )
+  ) |>
+  option_add(grid = tree_grid, id = "base_dec_tree") |>
+  option_add(grid = xgb_grid, id = "base_xgb") |>
+  option_add(grid = rf_grid, id = "base_rf")
+
+model_set_norm <-
+  workflow_set(
+    preproc = list(norm = norm_recipe),
+    models = list(
+      multinom = multinom_spec,
+      knn = knn_spec,
+      lda = lda_spec,
+      svm = svm_spec,
+      nb = nb_spec,
+      mlp = mlp_spec,
+      binom = elastic_spec
+    )
+  )
+model_set <- bind_rows(model_set_base, model_set_norm)
+```
+
+# Cross-Validation
+
+```{r}
+set.seed(123)
+folds <- 5
+cervical_folds <- vfold_cv(rawdata, v = folds, repeats = 20)
+
+# Simplify the metrics to avoid naming conflicts
+cervical_metrics <- metric_set(accuracy, kap)
+
+# Run all models in the set across all folds
+plan(mirai_multisession, workers = max(availableCores() - 2, folds))
+models_test_results <-
+  model_set |>
+  workflow_map(
+    "tune_grid",
+    resamples = cervical_folds,
+    metrics = cervical_metrics,
+    verbose = TRUE,
+    seed = 321
+  )
+plan(sequential)
+```
+
+# Ranking the models
+
+```{r}
+model_metrics <- models_test_results |>
+  filter(sapply(result, function(x) inherits(x, "tune_results"))) |>
+  collect_metrics()
+
+#Visualization
+model_metrics |>
+  filter(.metric == "accuracy") |>
+  mutate(model = str_remove(wflow_id, "^(base|norm|reduced)_")) |>
+  arrange(model) |>
+  ggplot(aes(x = wflow_id, y = mean)) +
+  geom_beeswarm(size = 2, alpha = 0.25, cex = 3) +
+  facet_wrap(facets = vars(model), scales = "free") +
+  scale_x_discrete(name = NULL) +
+  labs(
+    title = "Full Model Comparison: All Grid Search Results",
+    subtitle = "Showing all hyperparameter combinations per algorithm",
+    y = "mean accuracy"
+  )
+
+autoplot(models_test_results, select_best = TRUE)
+
+autoplot(models_test_results, select_best = TRUE) +
+  aes(x = wflow_id) +
+  geom_point(size = 3, alpha = 0.25) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "Full Model Comparison: ",
+    subtitle = "Showing best out of all hyperparameter combinations per algorithm",
+    x = "Model Specification",
+    y = "Metric Value\nmean \u00b1 mystery interval" 
+  )
+```
+
+# Best model selection
+
+```{r}
+model_metrics_accuracy <- model_metrics |>
+  filter(.metric == "accuracy") |>
+  arrange(desc(mean))
+
+model_metrics_accuracy <- model_metrics |>
+  filter(.metric == "kap") |>
+  arrange(desc(mean))
+
+best_results <- models_test_results |>
+  rank_results(rank_metric = "kap", select_best = TRUE)
+
+best_workflow_fit <- models_test_results |>
+  extract_workflow_set_result("norm_mlp") |> # Replace with your winner ID
+  select_best(metric = "kap")
+
+finalize_workflow <- models_test_results |>
+  extract_workflow("norm_mlp") |>
+  finalize_workflow(best_workflow_fit)
+```
+
+```{r}
+final_fit <- finalize_workflow |> 
+  fit(data = rawdata)
+
+test_predicted <- final_fit |>
+  augment(new_data = rawdata) |>
+  rename_with(\(x) str_remove(x, "^.pred_"),
+              .cols = starts_with(".pred_"))
+
+tidy_metrics <- metric_set(accuracy, kap, f_meas, roc_auc)
+
+tidy_metrics(test_predicted,
+  truth = Tissuetype, estimate = class,
+  Tumor
+) |>
+  flextable()
+```

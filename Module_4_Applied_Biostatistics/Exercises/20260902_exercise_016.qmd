@@ -1,0 +1,386 @@
+---
+title: "Exercise LMM"
+format: docx
+editor: visual
+---
+
+## Setup
+
+```{r}
+pacman::p_load(conflicted,tidyverse,wrappedtools,
+               flextable, palmerpenguins, easystats,
+               patchwork, ggbeeswarm, ggsignif, broom, car, lme4)
+conflicts_prefer(dplyr::filter, 
+                 dplyr::select,
+                 palmerpenguins::penguins)
+```
+
+## Data Preparation
+
+```{r}
+rawdata <- penguins |>
+  drop_na() |> 
+  mutate(year = factor(year))
+head(rawdata)
+```
+
+## Data Exploration
+
+```{r}
+ggplot(rawdata, aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point() +
+  ylab("bill depth [mm]") +
+  xlab("weight [g]")
+```
+
+## Exercise
+### LMM with random intercept with species as random effect
+
+```{r}
+lmer_out <- lmer(
+  bill_depth_mm ~ body_mass_g + (1 | species), 
+  data = rawdata)
+lmer_out
+
+Anova(lmer_out)
+```
+
+```{r Data for plots}
+lmer_out_param <- model_parameters(lmer_out, group_level = TRUE)
+intercept_all <- lmer_out_param$Coefficient[1]
+slope_body <- lmer_out_param$Coefficient[2]
+
+plotdata <- tibble(
+  species = lmer_out_param$Level[-(1:2)],
+  intercept = lmer_out_param$Coefficient[-(1:2)] + intercept_all
+)
+```
+
+```{r Plots}
+p0 <- rawdata |>
+  ggplot(aes(body_mass_g, bill_depth_mm, 
+             color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_body)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+```
+
+### LMM with random slope
+
+```{r}
+lmer_out_rand <- lmer(
+  bill_depth_mm ~ body_mass_g + (1 + body_mass_g | species), 
+  data = rawdata, REML = FALSE)
+lmer_out_rand
+
+Anova(lmer_out_rand)
+```
+
+```{r Data for plots}
+lmer_out_rand_param <- model_parameters(lmer_out_rand, group_level = TRUE)
+intercept_all <- lmer_out_rand_param$Coefficient[1]
+slope_body <- lmer_out_rand_param$Coefficient[2]
+
+plotdata <- tibble(
+  species = lmer_out_rand_param$Level[(3:5)],
+  intercept = lmer_out_rand_param$Coefficient[(3:5)] + intercept_all,
+  slope_species = lmer_out_rand_param$Coefficient[(6:8)] + slope_body
+)
+```
+
+```{r Plots}
+p1 <- rawdata |> filter(species != "Gentoo") |>
+  ggplot(aes(body_mass_g, bill_depth_mm, 
+             color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata[-3, ],
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_species)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+
+p2 <- rawdata |> filter(species != "Chinstrap") |>
+  ggplot(aes(body_mass_g, bill_depth_mm, 
+             color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata[-2, ],
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_species)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+
+p3 <- rawdata |> filter(species != "Adelie") |>
+  ggplot(aes(body_mass_g, bill_depth_mm, 
+             color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata[-1, ],
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_species)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+
+p4 <- rawdata |> 
+  ggplot(aes(body_mass_g, bill_depth_mm, 
+             color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_species)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+
+(p1 + p2 + p4) / p4
+
+p0 / p4
+```
+
+### LMM with random intercept with species and sex as random effects
+
+```{r}
+ggplot(rawdata, aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point() +
+  ylab("bill depth [mm]") +
+  xlab("weight [g]")
+```
+
+```{r}
+lmer_out2 <- lmer(
+  bill_depth_mm ~ body_mass_g + (1 | species / sex), 
+  data = rawdata)
+lmer_out2
+Anova(lmer_out2)
+```
+
+```{r Data for plots 2}
+lmer_out2_param <- model_parameters(lmer_out2, group_level = TRUE)
+# Fixed effects slope
+intercept_all <- lmer_out2_param$Coefficient[1]
+slope_body <- lmer_out2_param$Coefficient[2]
+
+# Random effect data
+plotdata_female <- tibble(
+  species = lmer_out2_param$Level[(9:11)],
+  intercept = lmer_out2_param$Coefficient[(3:5)] + intercept_all + lmer_out2_param$Coefficient[(9:11)]
+)
+
+plotdata_male <- tibble(
+  species = lmer_out2_param$Level[(9:11)],
+  intercept = lmer_out2_param$Coefficient[(6:8)] + intercept_all + lmer_out2_param$Coefficient[(9:11)]
+)
+
+```
+
+```{r Plots}
+rawdata |>
+  ggplot(aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata_female,
+    linetype = 1,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_body)
+  ) +
+  geom_abline(
+    data = plotdata_male,
+    linetype = 3,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_body)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(0, 25)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+```
+
+### Random Slope
+
+```{r}
+ggplot(rawdata, aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point() +
+  ylab("bill depth [mm]") +
+  xlab("weight [g]")
+```
+
+```{r}
+lmer_out_rand_2 <- lmer(
+  bill_depth_mm ~ body_mass_g + (1 + body_mass_g | species) + 
+    (1+ body_mass_g | sex), 
+  data = rawdata, REML = FALSE)
+lmer_out_rand_2
+Anova(lmer_out_rand_2)
+```
+
+```{r Data for plots 2}
+lmer_out_rand_2_param <- model_parameters(lmer_out_rand_2, group_level = TRUE)
+# Fixed effects slope
+intercept_all <- lmer_out_rand_2_param$Coefficient[1]
+slope_body <- lmer_out_rand_2_param$Coefficient[2]
+
+# Random effect data
+plotdata_female <- tibble(
+  species = lmer_out_rand_2_param$Level[(3:5)],
+  intercept = lmer_out_rand_2_param$Coefficient[(3:5)] + intercept_all + lmer_out_rand_2_param$Coefficient[9],
+  slope_f = lmer_out_rand_2_param$Coefficient[(6:8)] + slope_body + lmer_out_rand_2_param$Coefficient[11]
+)
+
+plotdata_male <- tibble(
+  species = lmer_out_rand_2_param$Level[(3:5)],
+  intercept = lmer_out_rand_2_param$Coefficient[(3:5)] + intercept_all + lmer_out_rand_2_param$Coefficient[10],
+  slope_m = lmer_out_rand_2_param$Coefficient[(6:8)] + slope_body + lmer_out_rand_2_param$Coefficient[12]
+)
+```
+
+```{r Plots}
+rawdata |>
+  ggplot(aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata_female,
+    linetype = 1,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_f)
+  ) +
+  geom_abline(
+    data = plotdata_male,
+    linetype = 3,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope_m)
+  ) +
+  geom_abline(colour = "black", linetype = 2,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(8, 23)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+```
+
+### The correct formula
+
+```{r}
+lmer_out_rand_2 <- lmer(
+  bill_depth_mm ~ body_mass_g + (1 + body_mass_g | species / sex), 
+  data = rawdata, REML = FALSE)
+lmer_out_rand_2
+Anova(lmer_out_rand_2)
+```
+
+```{r Data for plots 2}
+lmer_out_rand_2_param <- model_parameters(lmer_out_rand_2, group_level = TRUE)
+# Fixed effects slope
+intercept_all <- lmer_out_rand_2_param$Coefficient[1]
+slope_body <- lmer_out_rand_2_param$Coefficient[2]
+
+# Random effect data
+plotdata <- tibble(expand.grid(lmer_out_rand_2_param$Level[(18:20)], 
+                               c("female", "male"))) |> 
+  rename(
+    species = Var1,
+    sex = Var2
+  ) |>
+  mutate(
+    intercept = lmer_out_rand_2_param$Coefficient[(3:8)] + intercept_all + lmer_out_rand_2_param$Coefficient[15:17],
+    slope = lmer_out_rand_2_param$Coefficient[(9:14)] + slope_body + lmer_out_rand_2_param$Coefficient[18:20]
+  )
+
+# Alternative using separate() instead of expand.grid()
+# Probably more elegant, less hard coding
+test <- tibble(lmer_out_rand_2_param$Level[(3:8)]) |>
+  separate(col = `lmer_out_rand_2_param$Level[(3:8)]`, 
+           into = c("sex", "species")) |>
+  mutate(
+    intercept = lmer_out_rand_2_param$Coefficient[(3:8)] + intercept_all + lmer_out_rand_2_param$Coefficient[15:17],
+    slope = lmer_out_rand_2_param$Coefficient[(9:14)] + slope_body + lmer_out_rand_2_param$Coefficient[18:20]
+  )
+```
+
+```{r Plots}
+rawdata |>
+  ggplot(aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(
+    data = plotdata,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope,
+        linetype = sex)
+  ) +
+  geom_abline(colour = "black", linetype = 4,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(8, 23)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000))
+
+rawdata |>
+  ggplot(aes(body_mass_g, bill_depth_mm, color = species, shape = sex)) +
+  geom_point(alpha = 0.25) +
+  geom_abline(
+    data = plotdata,
+    aes(color = species,
+        intercept = intercept,
+        slope = slope,
+        linetype = sex)
+  ) +
+  geom_abline(colour = "black", linetype = 4,
+              aes(
+                intercept = intercept_all,
+                slope = slope_body)
+              ) +
+  scale_y_continuous(name = "bill depth [mm]", limits = c(8, 23)) +
+  scale_x_continuous(name = "weight [g]", limits = c(0, 7000)) + 
+  facet_grid(
+    rows = vars(species),
+    cols = vars(sex))
+```
