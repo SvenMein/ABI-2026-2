@@ -1,0 +1,135 @@
+---
+title: "Demo Exam Statistics"
+author: Your Name
+format: docx
+editor: visual
+markdown: 
+  wrap: 60
+---
+
+# Any packages needed? put them here!
+
+```{r}
+pacman::p_load(conflicted, tidyverse, broom, car)
+```
+
+Please give your answers underneath the question, referencing question numbers. Please answer outside code chunks or format text answers as comments.
+
+# Q1: Please generate the following sequences of numbers:
+
+## q1a: Numbers from 100 to 199
+
+```{r}
+#q1a<-c(100,101,102...)
+seq(100, 199, 1)
+```
+
+## q1b: 100 random data from a uniform distribution between 100 and 199
+
+```{r}
+runif(100, 100, 199)
+```
+
+## q1c: 100 random data from a normal distribution with mean=100 and variance=10
+
+```{r}
+rnorm(100, 100, sqrt(10))
+```
+
+## q1d: 100 random data from a log normal distribution with log(mean)=5 and log(sd)=0.5
+
+```{r}
+rlnorm(100, 5, 0.5)
+```
+
+## q1e: 100 random data from a factor with levels 1 and 2 in a ratio of 7:3.
+
+```{r}
+x <- sample(x = c(1, 2), size = 100, replace = TRUE, 
+            prob = c(0.7, 0.3)) |> 
+  as.factor()
+```
+
+# Q2: Please name statistical tests or class of analyses for the following analytical problems:
+
+## q2a: Test for normal distribution
+
+Shapiro-Wilk, Kolmogorov-Smirnov test ...
+
+## q2b: Multiple comparison for means between 3 or more groups for a Gaussian measure
+
+ANOVA, lm(), post-hoc like pairwise.t.test, Dunnet, Tukey ...
+
+# Q3: Assign the dataset mtcars to a new tibble
+
+```{r}
+ new_tibble <- as_tibble(mtcars)
+class(new_tibble)
+```
+
+# Q4: For the columns in Q3, please state if the data most likely represent Gaussian measures, ordinal measures, or categories
+
+am, cyl... are likely factors
+
+```{r}
+fact_vars <- c("am","cyl")
+```
+
+# Q5: For all numerical variables, test for Normal distribution.
+
+```{r}
+```
+
+# Q6
+
+## q6a: For all data assumed to follow a normal distribution, test for group differences between the various numbers of cylinders, post-hoc test optional
+
+## q6b: Save descriptive statistics for groups and p-value for a group effect in one or several result tables
+
+```{r}
+```
+
+## q6c: Export the result table(s) in an Excel file
+
+```{r}
+write_excel(df, "name.xlsx")
+```
+
+# Q7: Test regression between independent variable wt and dependent variable mpg
+
+## q7a: report the regression parameters
+
+```{r}
+lm_out <- lm(mpg ~ wt, data = new_tibble)
+intercept <- lm_out$coefficients[1]
+slope <- lm_out$coefficients[2]
+```
+
+## q7b: report significance for regression parameters
+
+```{r}
+anova_out <- anova(lm_out)
+p <- pluck(anova_out$`Pr(>F)`)
+p <- p$p.value # rather use pluck()
+```
+
+# Q8: Test the relation between dependent variable am and independent variables wt and mpg
+
+## q8a: report the model parameters
+
+```{r}
+lm_out <- lm(am ~ wt + mpg, data = new_tibble)
+intercept <- lm_out$coefficients[1]
+slope_wt <- lm_out$coefficients[2]
+slope_mpg <- lm_out$coefficients[3]
+```
+
+## q8b: report significance for model parameters
+
+```{r}
+anova_out <- Anova(lm_out)
+p <- tidy(anova_out)
+p <- p$p.value
+```
+
+Good luck!

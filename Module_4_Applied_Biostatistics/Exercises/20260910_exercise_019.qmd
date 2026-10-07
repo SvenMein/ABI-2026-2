@@ -1,0 +1,143 @@
+---
+title: "Boooooooosted"
+format: html
+editor: visual
+---
+
+# Setup
+
+```{r}
+pacman::p_load(
+  wrappedtools, tidyverse, here, conflicted, ggforce, ggbeeswarm, 
+  flextable,caret, tidymodels, gmodels, easystats, yardstick, kknn, 
+  rpart, rpart.plot, randomForest, future.mirai, xgboost, ranger
+)
+
+conflicts_prefer(
+  dplyr::select,
+  dplyr::filter,
+  dplyr::slice,
+  dplyr::filter,
+  dplyr::lag,
+)
+```
+
+# Data loading
+
+```{r}
+rawdata <- readRDS("data/cervical.RDS")
+predvars <- ColSeeker(rawdata, "_")
+```
+
+# Tidy Modeling
+```{r}
+set.seed(2026)
+
+xgb_folds <- vfold_cv(
+  rawdata, v = 5, strata = Tissuetype, repeats = 20)
+
+xgb_recipe <- recipe(rawdata) |>
+  update_role(Tissuetype, new_role = "outcome") |>
+  update_role(all_of(predvars$names), new_role = "predictor") |>
+  update_role(SampleID, PatID, new_role = "id")
+
+xgb_grid <- grid_space_filling(
+  tree_depth(range = c(10, 50)),
+  trees(range = c(100, 1000)),
+  learn_rate(),
+  loss_reduction(),
+  min_n(range = c(5, 20)), # 20 is a bit high for 40 samples
+  finalize(mtry(), rawdata),
+  size = 100 # How many combinations of paramters should be tested
+)
+
+xgb_spec <- boost_tree(
+  trees = tune(),
+  tree_depth = tune(),
+  min_n = tune(),
+  loss_reduction = tune(),
+  mtry = tune(),
+  learn_rate = tune()
+) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+
+xgb_workflow <- workflow() |>
+  add_recipe(xgb_recipe) |>
+  add_model(xgb_spec)
+
+# Fit the model to the data
+plan(mirai_multisession, workers = availableCores() - 2)
+xgb_results <- xgb_workflow |>
+  tune_grid(
+    resamples = xgb_folds,
+    grid = xgb_grid,
+    metrics = metric_set(roc_auc, accuracy)
+  )
+plan(sequential)
+
+# See the top performing models
+xgb_results |>
+  show_best(metric = "accuracy") |>
+  select(-.metric, -.estimator) |>
+  flextable()
+
+
+# Select the best parameters based on your preferred metric
+xgb_best <- xgb_results |>
+  select_best(metric = "accuracy")
+
+# Visualize the tuning results
+xgb_results |>
+  collect_metrics(summarize = FALSE) |>
+  filter(
+    .metric == "accuracy",
+    mtry == xgb_best$mtry,
+    trees == xgb_best$trees,
+    min_n == xgb_best$min_n,
+    tree_depth == xgb_best$tree_depth
+  ) |>
+  ggplot(aes(x = factor(tree_depth), y = .estimate)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_beeswarm(alpha = 0.5, size = 2) +
+  xlab("tree depth") +
+  theme_bw()
+
+# Update the workflow with those best parameters
+final_workflow <- xgb_workflow |>
+  finalize_workflow(xgb_best)
+
+# Fit to the entire dataset (or use test split)
+final_fit <- final_workflow |>
+  fit(data = rawdata)
+
+test_predicted <- final_fit |>
+  augment(new_data = rawdata) |>
+  rename_with(\(x) str_remove(x, "^.pred_"), starts_with(".pred_"))
+```
+
+# Model Evaluation
+
+```{r}
+yardstick::conf_mat(test_predicted, 
+                    truth = Tissuetype, estimate = class)
+
+tidy_metrics <- metric_set(accuracy, kap, 
+                           f_meas, roc_auc, mn_log_loss)
+
+tidy_metrics(test_predicted,
+  truth = Tissuetype, estimate = class,
+  Tumor
+) |>
+  flextable()
+
+test_predicted |>
+  pivot_longer(c(Control, Tumor),
+    values_to = "p Tissuetype",
+    names_to = "Tissue_pred"
+  ) |>
+  ggplot(aes(Tissue_pred, `p Tissuetype`)) +
+  geom_violin() +
+  geom_beeswarm(cex = .35, alpha = .25) +
+  facet_grid(rows = vars(Tissuetype))
+```

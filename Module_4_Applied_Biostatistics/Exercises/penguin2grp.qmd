@@ -1,0 +1,399 @@
+---
+title: "Cute penguins"
+format: 
+  docx:
+    reference-doc:  template2026_2.docx
+    toc: true
+  pdf:
+    toc: true
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  output: asis
+fig-dpi: 300
+fig-width: 6
+fig-height: 5
+tbl-cap-location: top
+---
+
+```{r setupstuff}
+pacman::p_load(conflicted,tidyverse,wrappedtools,
+               rlist, flextable, rlist, palmerpenguins,
+               patchwork, ggbeeswarm, ggsignif, broom)
+conflicts_prefer(dplyr::filter, 
+                 dplyr::select,
+                 palmerpenguins::penguins)
+set_flextable_defaults(big.mark = " ", 
+                       font.size = 9, 
+                       theme_fun = theme_vanilla,
+                       padding.bottom = 1, 
+                       padding.top = 3,
+                       padding.left = 3,
+                       padding.right = 4
+)
+theme_set(theme_bw())
+```
+
+```{r dataprep}
+rawdata <- penguins |>
+  drop_na() |> 
+  mutate(year = factor(year))
+Adelies <- rawdata |> 
+  filter(species == "Adelie")
+gauss_vars <- ColSeeker(Adelies,"_")
+ord_vars <- ColSeeker(Adelies,"_") # same as gauss here
+fact_vars <- ColSeeker(rawdata,varclass = "factor")
+```
+
+# Gaussian
+
+## Single variable
+
+```{r}
+summary_plot <- Adelies |>
+  ggplot(aes(sex, body_mass_g)) +
+  geom_beeswarm(alpha = .2, shape = 21, cex = 2,
+                aes(fill = sex), color = "black") +
+  stat_summary(fun.data = mean_cl_normal,
+               color = "black") +
+  # stat_summary(fun.data = mean_sdl,
+  #              color="black")+
+  ylab("Mean body mass (g)\n± 95% CI") +
+  guides(fill = "none")
+# guides(fill = guide_legend(override.aes = list(alpha = 1)))
+
+dens_plot <- Adelies |>
+  ggplot(aes(body_mass_g, fill = sex)) +
+  geom_density(alpha = .2)
+# guides(fill = guide_legend(override.aes = list(alpha = 1)))
+
+dens_plot + summary_plot +
+  plot_layout(ncol = 1, guides = "collect")
+cat('&nbsp;\n\n')
+# cat("\\newpage\n\n")
+cat("Table from var-test\n\n")
+var.test(body_mass_g ~ sex, data = Adelies) |> 
+  tidy() |> 
+  flextable() |> 
+  set_table_properties(width = 1, layout = "autofit")
+cat('&nbsp;\n\n')
+cat("Table from t-test\n\n")
+t.test(body_mass_g ~ sex, data = Adelies,
+       var.equal = var.test(body_mass_g ~ sex,
+                            data = Adelies)$p.value >= .05) |> 
+  tidy() |> 
+  flextable() |> 
+  set_table_properties(width = 1, layout = "autofit")
+cat('&nbsp;\n\n')
+t.test(body_mass_g ~ sex, data = Adelies,
+       var.equal = var.test(body_mass_g ~ sex,
+                            data = Adelies)$p.value >= .05) |> 
+  tidy() |>
+  select(statistic, p.value, starts_with("c"), method) |> 
+  mutate(p.value = formatP(p.value, ndigits = 4, mark = TRUE),
+         statistic = roundR(statistic, level = 4),
+         across(starts_with("c"), roundR)) |> 
+  flextable() |> 
+  set_table_properties(width = 1, layout = "autofit")
+cat('&nbsp;\n\n')
+t_out <- t_var_test(body_mass_g ~ sex, data = Adelies)
+
+summary_plot <- 
+  summary_plot +
+  geom_signif(comparisons = list(c(1, 2)),
+              annotations = paste("p",
+                                  formatP(t_out$p.value,
+                                          pretext = T,
+                                          mark = T))) +
+  scale_y_continuous("Mean body mass (g)\n± 95% CI",
+                     expand = expansion(mult = c(.05, .15))) +
+  guides(fill = "none")
+dens_plot + summary_plot +
+  plot_layout(ncol = 1, guides = "collect")
+cat('&nbsp;\n\n')
+```
+
+## Multiple variables
+
+```{r}
+gauss_results <- compare2numvars(data = Adelies, 
+                                 dep_vars = c("bill_length_mm",
+                                              "bill_depth_mm",
+                                              "flipper_length_mm",
+                                              "body_mass_g"),
+                                 #gauss_vars$names,
+                                indep_var = 'sex', gaussian = T,
+                                 round_p = 5,
+                                 add_n = T)
+gauss_results |>
+  select(-desc_all) |> 
+  flextable() |> 
+  set_table_properties(width = .9, layout = 'autofit')
+cat('&nbsp;\n\n')
+```
+
+```{r}
+#| fig-height: 4
+gauss_plot <- list()
+for (row_i in seq_along(gauss_results$Variable)) {
+  plot_temp <- Adelies |> 
+    ggplot(aes(sex, .data[[gauss_results$Variable[row_i]]])) +
+    geom_beeswarm(alpha = .1) +
+    stat_summary(fun.data = mean_cl_normal,
+                 color = "orangered3") +
+    geom_signif(comparisons = list(c(1, 2)),
+                annotations = paste("p",
+                                    formatP(gauss_results$p[row_i],
+                                            pretext = T,
+                                            mark = T))) +
+    scale_y_continuous(paste(gauss_results$Variable[row_i],
+                             "\nmean ± 95% CI"),
+                       expand = expansion(mult = c(.05, .1)))
+  gauss_plot <- list.append(gauss_plot, plot_temp)
+  names(gauss_plot)[length(gauss_plot)] <- 
+    gauss_results$Variable[row_i]
+  print(plot_temp)
+  cat("<br>\n\n")
+}
+#walk(gauss_plot, print)
+```
+
+## Comparison of 2 species
+
+```{r}
+rawdata |>
+  # filter(species == "Adelie" | species == "Gentoo")
+  # filter(species != "Chinstrap") |> 
+  filter_out(species == "Chinstrap") |> 
+  mutate(species = fct_drop(species)) |>
+  compare2numvars(dep_vars = gauss_vars$names,
+                  indep_var = "species",
+                  round_desc = 3,
+                  gaussian = TRUE,
+                  singleline = FALSE) |> 
+  flextable() |> 
+  bg(~p != "", bg = 'lightgrey') |>
+  set_table_properties(width = 1, layout = "autofit")
+cat('&nbsp;\n\n')
+
+
+```
+
+# Ordinal
+
+## Single variable
+
+```{r}
+summary_plot <- Adelies |> 
+  ggplot(aes(sex, bill_depth_mm)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_beeswarm(alpha = .1)
+
+dens_plot <- Adelies |> 
+  ggplot(aes(bill_depth_mm, fill = sex)) +
+  geom_density(alpha = .5)
+
+dens_plot / summary_plot
+cat('&nbsp;\n\n')
+w_out <- wilcox.test(bill_depth_mm ~ sex, 
+                     data = Adelies)
+w_out |> 
+  tidy() |> 
+  flextable() |> 
+  set_table_properties(width = 1, layout = "autofit")
+cat('&nbsp;\n\n') 
+
+summary_plot <- 
+  summary_plot +
+  geom_signif(
+    comparisons = list(c(1, 2)),
+    annotations = paste("p",
+                        formatP(w_out$p.value,
+                                pretext = TRUE,
+                                mark = TRUE))) +
+  scale_y_continuous("Bill depth (mm)",
+                     expand = expansion(mult = c(.05, .15)))
+dens_plot / summary_plot
+cat('&nbsp;\n\n')
+
+
+```
+
+## Multiple variables
+
+```{r}
+ord_results <- compare2numvars(Adelies, 
+                               ord_vars$names,
+                               'sex', gaussian = FALSE, 
+                               n = TRUE,
+                               round_p = 5,
+                               #pretext = TRUE
+                               mark = TRUE)
+ord_results |>
+  flextable() |> 
+  set_table_properties(width = 1)
+cat("<br>\n\n")
+```
+
+```{r}
+#| fig-height: 4
+for (row_i in seq_along(ord_results$Variable)) {
+  plot_temp <- Adelies |> 
+    ggplot(aes(sex, .data[[ord_results$Variable[row_i]]])) +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_beeswarm(alpha = .1) +
+    geom_signif(
+      comparisons = list(c(1, 2)),
+      annotations = paste("p",
+                          formatP(ord_results$p[row_i] |> 
+                                    parse_number(),
+                                  pretext = T,
+                                  mark = T))) +
+    scale_y_continuous(
+      ord_results$Variable[row_i],
+      expand = expansion(mult = c(.05, .1)))
+  
+  print(plot_temp)
+  cat("<br>\n\n")
+}
+
+
+```
+
+# Categoricals
+
+## Single variable
+
+```{r}
+#| fig-height: 4
+
+ggplot(Adelies, aes(sex, fill = island)) +
+  geom_bar() +
+  geom_text(stat = "count",
+            aes(label = after_stat(count)),
+            position = position_stack(vjust = .5))
+cat('&nbsp;\n\n')
+
+freq_plot <- 
+  ggplot(Adelies, aes(sex, fill = island)) +
+  geom_bar(position = "fill") +
+  geom_text(stat = "count",
+            aes(label = scales::percent(after_stat(count / sum(count))),
+                y = after_stat(count / sum(count))),
+            position = position_fill(vjust = 0.5)) +
+  scale_y_continuous("Frequencies",
+                     labels = scales::percent)
+freq_plot
+cat('&nbsp;\n\n')
+ggplot(Adelies, aes(island, fill = sex)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = after_stat(count)),
+            position = position_stack(vjust = .5))
+cat('&nbsp;\n\n')
+
+chi_out <- chisq.test(Adelies$island, Adelies$sex)  
+
+if (chi_out$expected |> min() >= 5) {
+  chi_out |> 
+    tidy() |> 
+    select(-method) |> 
+    mutate(p.value = formatP(p.value, ndigits = 3, mark = TRUE)) |> 
+    flextable() |> 
+    set_table_properties(width = .6, layout = "autofit") |> 
+    flex2rmd()
+  cat('&nbsp;\n\n') 
+}  
+
+(fisher_out_sex <- 
+    fisher.test(Adelies$island, Adelies$sex))
+cat('&nbsp;\n\n')
+
+(fisher_out_sex_sim <- 
+    fisher.test(Adelies$island, 
+                Adelies$sex,
+                simulate.p.value = TRUE,
+                B = 10^5))
+cat('&nbsp;\n\n')
+
+ggplot(Adelies, aes(sex, fill = island)) +
+  geom_bar(position = "fill") +
+  geom_text(stat = "count",
+            aes(label = scales::percent(after_stat(count / sum(count))),
+                y = after_stat(count / sum(count))),
+              position = position_fill(vjust = 0.5)) +
+    geom_signif(
+      aes(y = 1.05),
+      comparisons = list(c(1, 2)),
+      annotations = paste("p",
+                          formatP(fisher_out_sex$p.value,
+                                  pretext = T,
+                                  mark = T))) +
+    scale_y_continuous("Frequencies",
+                       labels = scales::percent,
+                       breaks = seq(0, 1, .2),
+                       expand = expansion(mult = c(0, .15)))
+  cat('&nbsp;\n\n')
+  
+  compare2qualvars(data = Adelies, 
+                   dep_vars = c("island", "year"), 
+                   indep_var = "sex") |> 
+    flextable() |> 
+    bg(~p != " ", bg = "lightgrey") |> 
+    set_table_properties(width = 1, layout = "autofit")
+  cat('&nbsp;\n\n')
+
+  compare_n_qualvars(data = rawdata, 
+                     dep_vars = c("island", "sex", "species"), 
+                     indep_var = "year") |> 
+    flextable() |> 
+    bg(~p != " ", bg = "lightgrey") |> 
+    set_table_properties(width = 1, layout = "autofit")
+  cat('&nbsp;\n\n')
+```
+
+# some code exploration
+
+Challenge was to run t-test or Wilcoxon inside summarize, it would be doable like this:
+
+```{r}
+rawdata |> 
+    group_by(species) |> 
+    summarize(
+      across(gauss_vars$names[3:4],
+             .fns = list(
+               `Desc total` = ~meansd(.x),
+               `Desc (f / m)` = ~meansd(.x, groupvar = .data[["sex"]],
+                                        add_n = TRUE) |> 
+                 paste(collapse = "\n"),
+               pvalue = ~t.test(.x ~ sex,
+                                var.equal = var.test(.x ~ sex)$p.value > 0.05) |> 
+                 pluck("p.value") |> 
+                 formatP(mark = T),
+               test_used = ~t.test(.x ~ sex,
+                                   var.equal = var.test(.x ~ sex)$p.value > 0.05) |> 
+                 pluck("method")
+             ),
+             .names = "{.col}:{.fn}"),
+      across(ord_vars$names[1:2],
+             .fns = list(
+               `Desc total` = ~median_quart(.x),
+               `Desc (f / m)` = ~median_quart(.x, groupvar = .data[["sex"]],
+                                              add_n = TRUE) |> 
+                 paste(collapse = "\n"),
+               pvalue = ~wilcox.test(.x ~ sex, exact = FALSE) |> 
+                 pluck("p.value") |> 
+                 formatP(mark = T),
+               test_used = ~wilcox.test(.x ~ sex, exact = FALSE) |> 
+                 pluck("method")
+             ),
+             .names = "{.col}:{.fn}")
+    ) |> 
+    pivot_longer(-species,
+                 names_to = c("Variable", ".value"),
+                 names_sep = ":"
+    ) |> 
+    flextable() |> 
+    merge_v(j = 1) |> 
+    set_table_properties(width = 1, layout = "autofit")
+```

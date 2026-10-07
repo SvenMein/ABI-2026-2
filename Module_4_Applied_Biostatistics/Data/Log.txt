@@ -1,0 +1,92 @@
+!!! WARNINGS !!!
+Warning! y-intercept far from zero - The ratio of the y-intercept of the auto threshold regression line to the mean value of Channel 2 is high. This means the y-intercept is far from zero, implying a significant positive or negative zero offset in the image data intensities. Maybe you should use a ROI. Maybe do a background subtraction in both channels. Make sure you didn't clip off the low intensities to zero. This might not affect Pearson's correlation values very much, but might harm other results.
+Warning! Threshold of ch. 1 too high - Too few pixels are taken into account for above-threshold calculations. The threshold is above the channel's mean.
+Warning! Threshold of ch. 2 too high - Too few pixels are taken into account for above-threshold calculations. The threshold is above the channel's mean.
+RESULTS:
+Coloc_Job_Name, Colocalization_of_C1-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_versus_C2-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_227161213
+% zero-zero pixels, 0.01
+% saturated ch1 pixels, 0.01
+% saturated ch2 pixels, 0.01
+Channel 1 Max, 51327.000
+Channel 2 Max, 63495.000
+Channel 1 Min, 0.000
+Channel 2 Min, 0.000
+Channel 1 Mean, 6936.299
+Channel 2 Mean, 6357.832
+Channel 1 Integrated (Sum) Intensity, 264377053.000
+Channel 2 Integrated (Sum) Intensity, 242328776.000
+Mask Type Used, mask image
+Mask ID Used, 227161213
+m (slope), 7.30
+b (y-intercept), -44258.06
+b to y-mean ratio, -6.96
+Ch1 Max Threshold, 8425.00
+Ch2 Max Threshold, 17220.00
+Threshold regression, Bisection
+Pearson's R value (no threshold), 0.08
+Pearson's R value (below threshold), -0.00
+Pearson's R value (above threshold), -0.42
+Costes P-Value, 0.89
+Costes Shuffled Mean, 0.01
+Costes Shuffled Std.D., 0.06
+Ratio of rand. Pearsons >= actual Pearsons value , 10.00
+!!! WARNINGS !!!
+Warning! y-intercept far from zero - The ratio of the y-intercept of the auto threshold regression line to the mean value of Channel 2 is high. This means the y-intercept is far from zero, implying a significant positive or negative zero offset in the image data intensities. Maybe you should use a ROI. Maybe do a background subtraction in both channels. Make sure you didn't clip off the low intensities to zero. This might not affect Pearson's correlation values very much, but might harm other results.
+RESULTS:
+Coloc_Job_Name, Colocalization_of_C1-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_versus_C2-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_227559075
+% zero-zero pixels, 0.18
+% saturated ch1 pixels, 0.01
+% saturated ch2 pixels, 0.01
+Channel 1 Max, 44262.000
+Channel 2 Max, 64174.000
+Channel 1 Min, 0.000
+Channel 2 Min, 0.000
+Channel 1 Mean, 7209.414
+Channel 2 Mean, 4545.438
+Channel 1 Integrated (Sum) Intensity, 266697835.000
+Channel 2 Integrated (Sum) Intensity, 168149372.000
+Mask Type Used, mask image
+Mask ID Used, 227559075
+m (slope), 0.46
+b (y-intercept), 1247.95
+b to y-mean ratio, 0.27
+Ch1 Max Threshold, 1.00
+Ch2 Max Threshold, 1249.00
+Threshold regression, Bisection
+Pearson's R value (no threshold), 0.20
+Pearson's R value (below threshold), 0.39
+Pearson's R value (above threshold), 0.20
+Costes P-Value, 1.00
+Costes Shuffled Mean, 0.01
+Costes Shuffled Std.D., 0.07
+Ratio of rand. Pearsons >= actual Pearsons value , 0.00
+!!! WARNINGS !!!
+Warning! y-intercept far from zero - The ratio of the y-intercept of the auto threshold regression line to the mean value of Channel 2 is high. This means the y-intercept is far from zero, implying a significant positive or negative zero offset in the image data intensities. Maybe you should use a ROI. Maybe do a background subtraction in both channels. Make sure you didn't clip off the low intensities to zero. This might not affect Pearson's correlation values very much, but might harm other results.
+RESULTS:
+Coloc_Job_Name, Colocalization_of_C1-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_versus_C2-20220706_BY4742_Snc1 GFP_green_Sec7 DsRed_red_1.tif_750257113
+% zero-zero pixels, 2.17
+% saturated ch1 pixels, 0.01
+% saturated ch2 pixels, 0.01
+Channel 1 Max, 60560.000
+Channel 2 Max, 62294.000
+Channel 1 Min, 0.000
+Channel 2 Min, 0.000
+Channel 1 Mean, 13448.764
+Channel 2 Mean, 6659.978
+Channel 1 Integrated (Sum) Intensity, 406569579.000
+Channel 2 Integrated (Sum) Intensity, 201337792.000
+Mask Type Used, mask image
+Mask ID Used, 750257113
+m (slope), 0.53
+b (y-intercept), -436.25
+b to y-mean ratio, -0.07
+Ch1 Max Threshold, 1817.00
+Ch2 Max Threshold, 522.00
+Threshold regression, Bisection
+Pearson's R value (no threshold), 0.57
+Pearson's R value (below threshold), 0.00
+Pearson's R value (above threshold), 0.49
+Costes P-Value, 1.00
+Costes Shuffled Mean, 0.03
+Costes Shuffled Std.D., 0.07
+Ratio of rand. Pearsons >= actual Pearsons value , 0.00

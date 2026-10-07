@@ -1,0 +1,309 @@
+---
+title: "HDLox2024"
+author: "Dr. Jan Itor"
+format: 
+  docx:
+    reference-doc: template2026_2.docx
+    toc: true
+    toc-depth: 4
+    output-file: HDLoxReport202609xx.docx 
+execute:
+  echo: false
+  warning: false
+  output: asis
+fig-dpi: 300
+fig-width: 6
+fig-height: 4
+editor: visual
+---
+
+\newpage
+
+# *Background*
+
+*Does HDLox differ between subject with/without PAD? Can it improve prediction/diagnosis of PAD?*
+
+# *Methods*
+
+# *Analysis*
+
+## *Setup and import*
+
+```{r}
+pacman::p_load(
+  conflicted, tidyverse, wrappedtools,
+  broom, flextable, readxl, here,
+  car, multcomp, pROC,
+  ggbeeswarm, GGally, ggsignif,
+  polyglotr
+)
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::select
+)
+set_flextable_defaults(
+  big.mark = " ",
+  font.size = 9,
+  theme_fun = theme_vanilla,
+  padding.bottom = 1,
+  padding.top = 3,
+  padding.left = 3,
+  padding.right = 4
+)
+set_theme(theme_light())
+pad_colors <- c("darkolivegreen", "darkorange")
+```
+
+```{r}
+#| echo: false
+rawdata <-
+  read_excel(here("data/DatensatzHDLox.xlsx")#,
+             # range = cell_cols("A:AB")
+  ) |>
+  select(`Patienten-ID`:`Smoking (Nein= 0, Ja=1)`) |>
+  select(
+    -Geburtsdatum,
+  ) |>
+  rename(
+    `LP(a) nmol/l` = "LP(a) (Lipoprotein a, nmol/l) cut off 120nmol/l",
+    CAD = "Angiographically confirmed CAD (1=ja, 0=nein), 0 bedeudet angiogr. Ausgeschlossen",
+    PAD = "Peripheral/Carotid artery disease (pAVK/cAVK) (0=nein, 1=ja)",
+    Adipositas = "Adipositas (cut off BMI ≥ 30 kg/m2, 0-keine Adipositas, 1-Adipositas Grad 1 oder höher)"
+  ) |>
+  rename_with(
+    \(x) str_replace_all(
+      x, c(
+        " \\( *[01]=.*" = "", # variations of ja nein male 
+        # " \\( *1=.*" = "",
+        " \\(Nein=.*" = "",
+        " \\( *[uU].*" = "", # Umrechnung
+        "NT " = "NT",
+        "\\.{3}\\d+" = "", # added ... for repeated names
+        " in" = "", # prefix for some m. units
+        ", .+" = "",
+        " (.+/.+)" = " [\\1]"
+      )
+    ) |>
+      str_squish()
+  ) |>
+  mutate(
+    `Patienten-ID` = as.character(`Patienten-ID`),
+    Gender = factor(Gender,
+                    levels = c(1, 2),
+                    labels = c("male", "female")
+    ),
+    CAD = replace_na(CAD, 0),
+    `LP(a) [nmol/l]` =
+      str_replace_all(`LP(a) [nmol/l]`, c(
+        "<" = "",
+        "," = "."
+      )) |>
+      as.numeric() |>
+      round(1),
+    across(
+      where( \(x) (length(unique(na.omit(x))) == 2 &
+                 all(unique(na.omit(x)) %in% c(0, 1))
+      )),
+      # c(`Healthy subjects`,
+      #        CAD,PAD, `Diabetes mell.`,
+      #        Hypertension, Smoking, Microalbuminuria,
+      #        Adipositas),
+      .fns = ~ factor(
+        .x,
+        levels = c(0, 1),
+        labels = c("no", "yes")
+      )
+    ),
+    Größe = case_when(Größe > 3 ~ Größe / 100,
+                      .default = Größe
+    ),
+    BMI = Gewicht / Größe^2
+  ) |>
+  # filter_out(is.na(HDLox))
+  drop_na(HDLox, PAD)
+
+german_names <- ColSeeker(
+  namepattern = c("Pat", "G[re]", "Adip", "Chol")
+)
+colnames(rawdata)[german_names$index] <-
+  polyglotr::google_translate(german_names$names,
+                              target_language = "en",
+                              source_language = "de"
+  )
+cn()
+# n_obs <- nrow(rawdata)
+# n_complete <- nrow(drop_na(rawdata))
+```
+
+\newpage
+
+## *Test for Normal distribution*
+
+```{r}
+#| fig.height: 3
+gausstest <-
+  rawdata |>
+  group_by(`Healthy subjects`) |>
+  summarize(across(
+    where(is.numeric),
+    list(
+      "norm" = \(x) ksnormal(x,
+                          lillie = FALSE
+      ),
+      "lognorm" = \(x) ksnormal(log(x),
+                             lillie = FALSE
+      )
+    )
+  )) |>
+  pivot_longer(-`Healthy subjects`,
+               names_to = c("Variable", ".value"),
+               names_sep = "_"
+  ) |>
+  arrange(Variable, `Healthy subjects`) |>
+  pivot_wider(
+    names_from = `Healthy subjects`,
+    values_from = contains("norm"),
+    names_glue = "healthy:{`Healthy subjects`} {.value}"
+  ) |>
+  mutate(across(
+    contains("Healthy"),
+    ~ formatP(.x,
+              ndigits = 5, mark = TRUE
+    )
+  ))
+flextable(gausstest) |>
+  bg(~ str_detect(`healthy:no norm`, "n.s."),
+     j = 2, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:yes norm`, "n.s."),
+     j = 3, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:no lognorm`, "n.s."),
+     j = 4, bg = "lightgreen"
+  ) |>
+  bg(~ str_detect(`healthy:yes lognorm`, "n.s."),
+     j = 5, bg = "lightgreen"
+  ) |>
+  set_table_properties(
+    width = 1,
+    layout = "autofit"
+  )
+cat("<br>\n\n")
+test_vars <- ColSeeker(rawdata,
+                       varclass = "numeric",
+                       exclude = c("Age")
+)
+log_vars <- ColSeeker(namepattern = c(
+  "DL ", "Chol", "Tri",
+  "BNP", "hsC", "Alb"
+))
+for (var_i in test_vars$names) {
+  plot_out <-
+    ggplot(rawdata, aes(
+      x = .data[[var_i]],
+      fill = `Healthy subjects`
+    )) +
+    geom_density(alpha = .5) +
+    ggtitle(paste(
+      "Control", gausstest |>
+        filter(Variable == var_i) |>
+        pull(`healthy:yes norm`),
+      "Patient", gausstest |>
+        filter(Variable == var_i) |>
+        pull(`healthy:no norm`),
+      collapse = "\n"
+    )) +
+    scale_fill_manual(values = pad_colors)
+  print(plot_out)
+  cat("<br>\n\n")
+  if (var_i %in% log_vars$names) {
+    plot_out2 <-
+      ggplot(rawdata, aes(
+        x = .data[[var_i]],
+        fill = `Healthy subjects`
+      )) +
+      geom_density(alpha = .5) +
+      scale_x_log10(
+        breaks = logrange_15,
+        minor_breaks = logrange_123456789
+      ) +
+      ggtitle(paste(
+        "Control", gausstest |>
+          filter(Variable == var_i) |>
+          pull(`healthy:yes lognorm`),
+        "Patient", gausstest |>
+          filter(Variable == var_i) |>
+          pull(`healthy:no lognorm`),
+        collapse = "\n"
+      )) +
+      scale_fill_manual(values = pad_colors)
+    print(plot_out2)
+  }
+  cat("<br>\n\n")
+}
+```
+
+```{r}
+log_vars <- ColSeeker(namepattern = c(
+  "DL ", "Chol", "Tri",
+  "BNP", "hsC"
+))
+rawdata <-
+  rawdata |>
+  mutate(across(all_of(log_vars$names),
+                ~ log(.x + 0.001),
+                .names = "{.col} (ln)"
+  ))
+```
+
+*When a lognormal distribution is assumed, variables will be log-transformed and treated as gaussian AND will go into ordvars as well.*
+
+```{r}
+fact_vars <- ColSeeker(rawdata,
+                       varclass = "factor",
+                       exclude = "PAD"
+)
+gauss_vars <- ColSeeker(rawdata,
+                        varclass = "numeric",
+                        namepattern = c(
+                          "\\(ln\\)", "IMT",
+                          "^Si", "W", "BMI"
+                        )
+)
+ord_vars <- ColSeeker(rawdata,
+                      varclass = "numeric",
+                      namepattern = c(
+                        "DL", "Tri", "Chol", "Albu",
+                        "LP", "hsC", "PLA",
+                        "BNP", "GFR",
+                        "HbA", "Age"
+                      ),
+                      exclude = "\\(ln\\)"
+)
+```
+
+\newpage
+
+## *Univariate Analysis for PAD*
+
+### *Gaussian Variables*
+
+\newpage
+
+### *Ordinal Variables*
+
+\newpage
+
+### *Factor Variables*
+
+\newpage
+
+## *Correlations*
+
+## *Prediction analysis*
+
+### *All univariable models*
+
+\newpage
+
+### *Multivariable model*

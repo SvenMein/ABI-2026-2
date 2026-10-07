@@ -1,0 +1,152 @@
+---
+title: "PCA cervical"
+format: html
+editor: visual
+---
+
+# Setup
+
+```{r}
+pacman::p_load(
+  conflicted,
+  tidyverse,
+  wrappedtools,
+  ggfortify, GGally,
+  tidytext,
+  FactoMineR,
+  ggrepel, ggforce,
+  boot,
+  tidymodels,
+  corrplot
+)
+
+conflicts_prefer(
+  dplyr::slice,
+  dplyr::filter,
+  stats::screeplot,
+  stats::biplot,
+)
+```
+
+# Data loading
+
+```{r}
+rawdata <- readRDS("data/cervical.RDS")
+predvars <- ColSeeker(rawdata, "_")
+```
+
+# Preprocessing
+```{r}
+pca_recipe <- recipe(rawdata) |>
+  update_role(Tissuetype, new_role = "outcome") |>
+  update_role(all_of(predvars$names), new_role = "predictor") |>
+  update_role(SampleID, PatID, new_role = "id") |>
+  step_YeoJohnson(all_predictors()) |>
+  step_percentile(all_predictors(), outside = "both")
+```
+
+# Non tidymodels approach
+```{r}
+pca_data <- pca_recipe |>
+  prep() |>
+  bake(rawdata)
+
+ggplot(pca_data, aes(.data[[predvars$names[1]]], 
+                     .data[[predvars$names[2]]])) +
+  geom_point(aes(color = Tissuetype))
+
+pca_out <- prcomp(
+  pca_data |> 
+    select(predvars$names),
+  center = FALSE, scale. = FALSE
+)
+
+summary(pca_out)
+
+autoplot(pca_out,
+  data = pca_data, colour = "Tissuetype",
+  loadings = TRUE, loadings.colour = "black",
+  loadings.label = TRUE, loadings.label.size = 4
+)
+
+autoplot(pca_out,
+  data = pca_data, colour = "Tissuetype",
+  loadings = FALSE, loadings.colour = "black",
+  loadings.label = FALSE, loadings.label.size = 4
+)
+
+pc1_loadings <- pca_out$rotation[,1]
+
+axis_end <- c(pc1_loadings[1] * 2, pc1_loadings[2] * 2)
+slope_pc1 <- pc1_loadings[2] / pc1_loadings[1]
+
+ggplot(pca_data, aes(
+  .data[[predvars$names[1]]],
+  .data[[predvars$names[2]]]
+)) +
+  geom_point(aes(color = Tissuetype)) +
+  geom_abline(
+    intercept = 0, slope = slope_pc1,
+    color = "black", linetype = "dashed"
+  ) +
+  geom_segment(
+    aes(
+      xend = (.data[[predvars$names[1]]] +
+        .data[[predvars$names[2]]]) / 2,
+      yend = (.data[[predvars$names[1]]] +
+        .data[[predvars$names[2]]]) / 2
+    ),
+    color = "grey",
+    arrow = arrow(length = unit(0.3, "cm"))
+  ) +
+  geom_point(aes(0, 0))
+
+```
+
+# tidymodels approach
+
+```{r}
+pca_rec_trained <-
+  pca_recipe |>
+  prep()
+
+pca_preped <- 
+  pca_rec_trained |>
+  step_pca(all_numeric_predictors(), id = "pca_step") |>
+  prep()
+
+pca_baked <-
+  pca_preped |>
+  bake(new_data = rawdata)
+
+pca_baked |>
+  ggplot(
+    aes(x = .panel_x, y = .panel_y, color = Tissuetype, 
+        fill = Tissuetype)) +
+  geom_point(alpha = 0.4, size = 0.5) +
+  geom_autodensity(alpha = .5) +
+  facet_matrix(vars(starts_with("PC")), layer.diag = 2)
+
+pca_loadings <-
+  pca_preped %>%
+  tidy(id = "pca_step")
+
+pca_loadings |>
+  group_by(component) |>
+  slice_max(abs(value), n = 10) |> 
+  ungroup() |>
+  ggplot(aes(
+    x = abs(value), y = reorder_within(terms, abs(value), component),
+    fill = value > 0
+  )) +
+  geom_col() +
+  scale_y_reordered() +
+  facet_wrap(vars(component), scales = "free_y") +
+  labs(
+    x = "Absolute value of loading",
+    y = NULL,
+    fill = "Positive?",
+    title = "Principal Component Loadings"
+  )
+
+```
