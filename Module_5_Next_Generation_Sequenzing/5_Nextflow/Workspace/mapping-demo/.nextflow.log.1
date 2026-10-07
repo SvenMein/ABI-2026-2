@@ -1,0 +1,67 @@
+Oct-06 18:04:59.594 [main] DEBUG nextflow.cli.Launcher - $> nextflow NGS-QC.nf --reads ./fastq_raw
+Oct-06 18:04:59.674 [main] DEBUG nextflow.cli.CmdRun - N E X T F L O W  ~  version 26.04.6
+Oct-06 18:04:59.689 [main] DEBUG nextflow.plugin.PluginsFacade - Setting up plugin manager > mode=prod; embedded=false; plugins-dir=/home/sven/.nextflow/plugins; core-plugins: nf-amazon@3.9.2,nf-azure@1.22.6,nf-cloudcache@0.6.0,nf-codecommit@0.5.3,nf-console@1.3.0,nf-google@1.27.3,nf-k8s@1.5.4,nf-seqera@0.21.1,nf-tower@1.28.2,nf-wave@1.21.0
+Oct-06 18:04:59.708 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Enabled plugins: []
+Oct-06 18:04:59.710 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Disabled plugins: []
+Oct-06 18:04:59.712 [main] INFO  org.pf4j.DefaultPluginManager - PF4J version 3.14.1 in 'deployment' mode
+Oct-06 18:04:59.722 [main] DEBUG nextflow.util.RetryConfig - Missing nextflow session - using default retry config
+Oct-06 18:04:59.823 [main] DEBUG nextflow.plugin.PluginUpdater - Using plugin repository: HttpPluginRepository [registry]; url=https://registry.nextflow.io/api
+Oct-06 18:04:59.833 [main] INFO  org.pf4j.AbstractPluginManager - No plugins
+Oct-06 18:04:59.851 [main] DEBUG nextflow.config.ConfigParserFactory - Using config parser v2
+Oct-06 18:04:59.884 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins default=[]
+Oct-06 18:04:59.884 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins resolved requirement=[]
+Oct-06 18:04:59.893 [main] DEBUG n.secret.LocalSecretsProvider - Secrets store: /home/sven/.nextflow/secrets/store.json
+Oct-06 18:04:59.899 [main] DEBUG nextflow.secret.SecretsLoader - Discovered secrets providers: [nextflow.secret.LocalSecretsProvider@7d0cc890] - activable => nextflow.secret.LocalSecretsProvider@7d0cc890
+Oct-06 18:04:59.909 [main] DEBUG nextflow.cli.CmdRun - Launching `NGS-QC.nf` [romantic_descartes] - revision: 49bba3a436
+Oct-06 18:04:59.972 [main] DEBUG nextflow.Session - Session UUID: 1f710d1f-18b3-4ee4-81ae-a1f2a4b677b3
+Oct-06 18:04:59.973 [main] DEBUG nextflow.Session - Run name: romantic_descartes
+Oct-06 18:04:59.973 [main] DEBUG nextflow.Session - Executor pool size: 12
+Oct-06 18:04:59.979 [main] DEBUG nextflow.file.FilePorter - File porter settings maxRetries=3; maxTransfers=50; pollTimeout=null
+Oct-06 18:04:59.983 [main] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'FileTransfer' minSize=10; maxSize=36; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Oct-06 18:04:59.995 [main] DEBUG nextflow.cli.CmdRun - 
+  Version: 26.04.6 build 12646
+  Created: 09-07-2026 18:49 UTC (20:49 CEST)
+  System: Linux 6.6.87.2-microsoft-standard-WSL2
+  Runtime: Groovy 4.0.31 on OpenJDK 64-Bit Server VM 25.0.2-internal-adhoc.rattler.src
+  Encoding: UTF-8 (UTF-8)
+  Process: 921@DESKTOP-JOIRQ0R [127.0.1.1]
+  CPUs: 12 - Mem: 31.3 GB (30.2 GB) - Swap: 8 GB (8 GB)
+Oct-06 18:05:00.018 [main] DEBUG nextflow.Session - Work-dir: /mnt/c/Users/Sven/Desktop/Bioinformatik/ABI-2026-2/Module_5_Next_Generation_Sequenzing/5_Nextflow/Workspace/mapping-demo/work [v9fs]
+Oct-06 18:05:00.019 [main] DEBUG nextflow.Session - Script base path does not exist or is not a directory: /mnt/c/Users/Sven/Desktop/Bioinformatik/ABI-2026-2/Module_5_Next_Generation_Sequenzing/5_Nextflow/Workspace/mapping-demo/bin
+Oct-06 18:05:00.024 [main] DEBUG nextflow.executor.ExecutorFactory - Extension executors providers=[]
+Oct-06 18:05:00.030 [main] DEBUG nextflow.Session - Observer factory (v2): LinObserverFactory
+Oct-06 18:05:00.031 [main] DEBUG nextflow.Session - Observer factory (v2): DefaultObserverFactory
+Oct-06 18:05:00.050 [main] DEBUG nextflow.cache.CacheFactory - Using Nextflow cache factory: nextflow.cache.DefaultCacheFactory
+Oct-06 18:05:00.056 [main] DEBUG nextflow.util.CustomThreadPool - Creating default thread pool > poolSize: 13; maxThreads: 1000
+Oct-06 18:05:00.120 [main] DEBUG nextflow.Session - Session start
+Oct-06 18:05:00.124 [main] DEBUG nextflow.script.ScriptLoaderFactory - Using script parser v2
+Oct-06 18:05:00.448 [main] DEBUG nextflow.script.ScriptRunner - > Launching execution
+Oct-06 18:05:00.546 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Oct-06 18:05:00.546 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Oct-06 18:05:00.552 [main] DEBUG nextflow.executor.Executor - [warm up] executor > local
+Oct-06 18:05:00.557 [main] DEBUG n.processor.LocalPollingMonitor - Creating local task monitor for executor 'local' > cpus=12; memory=31.3 GB; capacity=12; pollInterval=100ms; dumpInterval=5m
+Oct-06 18:05:00.559 [main] DEBUG n.processor.TaskPollingMonitor - >>> barrier register (monitor: local)
+Oct-06 18:05:00.580 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'FASTQC': maxForks=0; fair=false; array=0
+Oct-06 18:05:00.601 [main] DEBUG nextflow.Session - Process names: FASTQC
+Oct-06 18:05:00.603 [main] DEBUG nextflow.Session - Igniting dataflow network (2)
+Oct-06 18:05:00.606 [PathVisitor-1] DEBUG nextflow.file.PathVisitor - files for syntax: glob; folder: ./fastq_raw/; pattern: *_R[1,2].{fastq,fq,fastq.gz}; options: [checkIfExists:true]
+Oct-06 18:05:00.607 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > FASTQC
+Oct-06 18:05:00.608 [main] DEBUG nextflow.script.ScriptRunner - Parsed script files:
+  Main: /mnt/c/Users/Sven/Desktop/Bioinformatik/ABI-2026-2/Module_5_Next_Generation_Sequenzing/5_Nextflow/Workspace/mapping-demo/NGS-QC.nf
+Oct-06 18:05:00.608 [main] DEBUG nextflow.script.ScriptRunner - > Awaiting termination 
+Oct-06 18:05:00.608 [main] DEBUG nextflow.Session - Session await
+Oct-06 18:05:00.728 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Oct-06 18:05:00.729 [Task submitter] INFO  nextflow.Session - [8d/6b9556] Submitted process > FASTQC (1)
+Oct-06 18:05:00.751 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Oct-06 18:05:00.752 [Task submitter] INFO  nextflow.Session - [32/619f25] Submitted process > FASTQC (2)
+Oct-06 18:05:08.948 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 1; name: FASTQC (1); status: COMPLETED; exit: 0; error: -; workDir: /mnt/c/Users/Sven/Desktop/Bioinformatik/ABI-2026-2/Module_5_Next_Generation_Sequenzing/5_Nextflow/Workspace/mapping-demo/work/8d/6b9556853f132fe454ea6a666cea47]
+Oct-06 18:05:08.948 [Task monitor] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'TaskFinalizer' minSize=10; maxSize=36; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Oct-06 18:05:08.950 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 2; name: FASTQC (2); status: COMPLETED; exit: 0; error: -; workDir: /mnt/c/Users/Sven/Desktop/Bioinformatik/ABI-2026-2/Module_5_Next_Generation_Sequenzing/5_Nextflow/Workspace/mapping-demo/work/32/619f25cef4b0882e566ff1626e40ae]
+Oct-06 18:05:09.053 [main] DEBUG nextflow.Session - Session await > all processes finished
+Oct-06 18:05:09.147 [Task monitor] DEBUG n.processor.TaskPollingMonitor - <<< barrier arrives (monitor: local) - terminating tasks monitor poll loop
+Oct-06 18:05:09.147 [main] DEBUG nextflow.Session - Session await > all barriers passed
+Oct-06 18:05:09.148 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'TaskFinalizer' shutdown completed (hard=false)
+Oct-06 18:05:09.153 [main] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=2; failedCount=0; ignoredCount=0; cachedCount=0; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=0; succeedDuration=16.4s; failedDuration=0ms; cachedDuration=0ms;loadCpus=0; loadMemory=0; peakRunning=2; peakCpus=2; peakMemory=0; ]
+Oct-06 18:05:09.286 [main] DEBUG nextflow.cache.CacheDB - Closing CacheDB done
+Oct-06 18:05:09.302 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'FileTransfer' shutdown completed (hard=false)
+Oct-06 18:05:09.303 [main] DEBUG nextflow.script.ScriptRunner - > Execution complete -- Goodbye
